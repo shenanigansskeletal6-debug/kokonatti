@@ -1,0 +1,2348 @@
+[source: 8]<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>スキルウォーズ⚔️ (機能拡張版)</title>
+  <!-- PeerJS (オンライン同期用ライブラリ) -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { background: #0f172a; color: #f8fafc; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
+    #sidebar { width: 340px; background: #1e293b; border-right: 2px solid #334155; display: flex; flex-direction: column; padding: 15px; gap: 8px; z-index: 10; overflow-y: auto; }
+    #main-view { flex: 1; display: flex; flex-direction: column; position: relative; }
+    #game-canvas { width: 100%; height: 100%; background: #020617; display: block; }
+    
+    .card { background: #334155; border-radius: 8px; padding: 10px; margin-bottom: 4px; }
+    .btn { background: #2563eb; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 4px; transition: 0.2s; }
+    .btn:hover { background: #3b82f6; transform: scale(1.02); }
+    .btn-login { background: #10b981; }
+    .btn-login:hover { background: #34d399; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #ef4444; }
+    .btn-limited { background: #d97706; }
+    .btn-limited:hover { background: #f59e0b; }
+    .btn-sell { background: #eab308; color: #000; }
+    .btn-sell:hover { background: #facc15; }
+    .btn-skin { background: #ec4899; color: white; }
+    .btn-skin:hover { background: #f472b6; }
+    .btn-admin { background: #8b5cf6; display: none; }
+    
+    input, select { background: #0f172a; border: 1px solid #475569; color: white; padding: 8px; border-radius: 4px; width: 100%; margin-bottom: 6px; }
+    
+    .modal { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px); }
+    .modal-content { background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 25px; width: 80%; max-width: 900px; max-height: 85vh; overflow-y: auto; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+    .item-box { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 6px; text-align: center; }
+    
+    /* バナー UI */
+    #countdown-banner { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #0284c7, #0369a1); border: 2px solid #38bdf8; color: white; padding: 10px 25px; border-radius: 30px; font-weight: bold; z-index: 250; box-shadow: 0 0 20px rgba(56, 189, 248, 0.6); text-align: center; min-width: 320px; }
+    #countdown-timer-display { font-size: 1.5rem; color: #facc15; font-family: monospace; font-weight: bold; margin-top: 2px; text-shadow: 0 0 10px rgba(250, 204, 21, 0.5); }
+
+    #broadcast-banner { display: none; position: absolute; top: 75px; left: 50%; transform: translateX(-50%); background: linear-gradient(90deg, #b91c1c, #c2410c); color: white; padding: 12px 30px; border-radius: 30px; font-weight: bold; z-index: 200; box-shadow: 0 0 15px rgba(239,68,68,0.6); font-size: 1.1rem; text-align: center; }
+    
+    #poll-banner { display: none; position: absolute; top: 130px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #1e1b4b, #312e81); border: 2px solid #6366f1; color: white; padding: 15px 25px; border-radius: 16px; z-index: 200; box-shadow: 0 0 20px rgba(99, 102, 241, 0.7); width: 90%; max-width: 600px; text-align: center; }
+    #poll-options-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; }
+    .poll-opt-btn { background: #4338ca; border: 1px solid #818cf8; color: white; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; flex: 1; min-width: 40%; transition: 0.2s; }
+    .poll-opt-btn:hover { background: #6366f1; }
+
+    /* 変異イベントバナー */
+    #mutation-banner { display: none; position: absolute; top: 10px; right: 10px; background: linear-gradient(135deg, #8b5cf6, #d946ef); border: 2px solid #f43f5e; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; z-index: 200; box-shadow: 0 0 15px rgba(217, 70, 239, 0.6); text-align: center; }
+
+    #log-box { position: absolute; bottom: 10px; right: 10px; width: 350px; height: 150px; background: rgba(15,23,42,0.8); border: 1px solid #334155; border-radius: 6px; padding: 10px; font-size: 12px; overflow-y: auto; pointer-events: none; }
+
+    #luck-banner { display: none; background: linear-gradient(90deg, #eab308, #ca8a04); color: #000; font-weight: bold; padding: 6px; border-radius: 6px; text-align: center; margin-top: 5px; animation: luckPulse 1s infinite alternate; }
+    @keyframes luckPulse { from { transform: scale(0.98); } to { transform: scale(1.02); } }
+
+    #chat-box { height: 120px; background: #0f172a; border: 1px solid #475569; border-radius: 6px; padding: 6px; font-size: 11px; overflow-y: auto; margin-bottom: 4px; }
+    
+    .rarity-god, .rarity-ex, .rarity-ur, .rarity-supreme { color: #facc15; text-shadow: 0 0 5px #facc15; font-weight: bold; }
+    .rarity-lr, .rarity-sss, .rarity-ssr { color: #c084fc; text-shadow: 0 0 5px #c084fc; font-weight: bold; }
+    .rarity-sr, .rarity-ss, .rarity-s { color: #38bdf8; font-weight: bold; }
+    .rarity-r, .rarity-a, .rarity-b { color: #94a3b8; }
+
+    #gacha-anim-modal h1 { animation: pulse 0.5s infinite alternate; font-size: 3rem; color: white; }
+    @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.1); text-shadow: 0 0 20px #fff; } }
+
+    /* 戦闘アニメーション用CSS */
+    .battle-stage { display: flex; justify-content: space-between; align-items: center; width: 100%; height: 180px; position: relative; overflow: hidden; background: #020617; border-radius: 8px; border: 1px solid #334155; padding: 0 30px; }
+    .battle-unit { font-size: 3.5rem; transition: transform 0.2s ease-in-out; position: relative; z-index: 2; }
+    .battle-unit.player-attack { animation: playerSlash 0.5s ease-in-out; }
+    .battle-unit.ai-attack { animation: aiSlash 0.5s ease-in-out; }
+    
+    @keyframes playerSlash {
+      0% { transform: translateX(0) scale(1); }
+      50% { transform: translateX(120px) scale(1.3) rotate(15deg); }
+      100% { transform: translateX(0) scale(1); }
+    }
+    @keyframes aiSlash {
+      0% { transform: translateX(0) scale(1); }
+      50% { transform: translateX(-120px) scale(1.3) rotate(-15deg); }
+      100% { transform: translateX(0) scale(1); }
+    }
+
+    .slash-effect { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); width: 0px; height: 8px; background: #ef4444; box-shadow: 0 0 15px #ef4444, 0 0 25px #facc15; z-index: 5; border-radius: 4px; }
+    .slash-effect.active { display: block; animation: slashAnim 0.3s ease-out; }
+    
+    @keyframes slashAnim {
+      0% { width: 0px; opacity: 1; }
+      50% { width: 200px; opacity: 1; }
+      100% { width: 250px; opacity: 0; }
+    }
+
+    .badge-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #2563eb; border-radius: 2px; margin-left: 4px; vertical-align: middle; }
+    .badge-icon::after { content: '✓'; color: white; font-size: 10px; font-weight: bold; }
+
+    /* 変異バッジ装飾 */
+    .mut-GOLD { color: #facc15; text-shadow: 0 0 5px #facc15; font-weight: bold; }
+    .mut-DIAMOND { color: #38bdf8; text-shadow: 0 0 5px #38bdf8; font-weight: bold; }
+    .mut-RAINBOW { background: linear-gradient(90deg, #ef4444, #eab308, #10b981, #06b6d4, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: bold; }
+    .mut-DIVINE { color: #f43f5e; text-shadow: 0 0 8px #f43f5e; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div id="sidebar">
+    <h2>⚔️ SKILL WARS</h2>
+    <div class="card">
+      <p>💰 コイン: <span id="user-coins">1000</span></p>
+      <p>🆔 名前: <span id="user-id" style="cursor:pointer; text-decoration:underline; color:#38bdf8;" onclick="changeUsername()">LOCAL_PLAYER</span> ✏️</p>
+      <p>🛡️ 装備中: <span id="equipped-char-display" style="color:#facc15; font-weight:bold;">なし</span></p>
+      <p style="font-size:11px; color:#10b981; margin-top:4px;">🌐 オンラインID: <span id="my-peer-id">接続中...</span></p>
+      <div id="luck-banner">🍀 <span id="luck-banner-text">ガチャラック 2倍 開催中!</span> (残り <span id="luck-timer">00:00</span>)</div>
+    </div>
+
+    <div class="card" style="border: 1px solid #10b981;">
+      <h3 style="font-size:12px; color:#10b981;">🌐 相手のサーバーに入る</h3>
+      <input type="text" id="target-peer-id-input" placeholder="相手のオンラインIDを入力..." style="margin-top:4px;">
+      <button class="btn btn-login" style="margin-top:2px;" onclick="connectToPeerManual()">サーバーに参加</button>
+    </div>
+    
+    <button class="btn btn-login" onclick="claimLoginBonus()">📅 ログインボーナス</button>
+    <button class="btn" onclick="openModal('gacha-modal')">🎲 ガチャ (10種)</button>
+    <button id="limited-gacha-btn" class="btn btn-limited" onclick="openModal('limited-gacha-modal')">🔥 限定ガチャ (開催中!)</button>
+    <button class="btn" style="background:#0284c7;" onclick="openModal('fuse-modal')">🌀 ヒューズ (合成)</button>
+    <button class="btn" onclick="openModal('shop-modal')">🛒 能力強化ショップ</button>
+    <button class="btn btn-skin" onclick="openModal('skin-shop-modal')">🎨 スキンショップ</button>
+    <button class="btn btn-sell" onclick="openModal('sell-shop-modal')">💰 キャラ売却ショップ</button>
+    <button class="btn" onclick="openModal('inventory-modal')">🎒 インベントリ</button>
+    <button class="btn" style="background:#0284c7;" onclick="openModal('index-modal')">📖 世界キャラインデックス</button>
+    <button class="btn" onclick="openModal('friends-modal')">👥 フレンド & 受信トレイ</button>
+    
+    <button id="admin-btn" class="btn btn-admin" onclick="openModal('admin-modal')">👑 管理者パネル</button>
+    
+    <div class="card">
+      <h3>コード入力</h3>
+      <input type="text" id="code-input" placeholder="コードを入力...">
+      <button class="btn" onclick="submitCode()">送信</button>
+    </div>
+
+    <div class="card">
+      <h3>💬 グローバルチャット</h3>
+      <div id="chat-box"></div>
+      <input type="text" id="chat-input" placeholder="メッセージを入力..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+      <button class="btn" onclick="sendChatMessage()">送信</button>
+    </div>
+    
+    <div style="display:flex; gap:5px;">
+      <button class="btn btn-danger" style="flex:1;" onclick="saveToCloud()">💾 保存</button>
+      <button class="btn btn-danger" style="flex:1; background:#991b1b;" onclick="resetData()">💥 初期化</button>
+    </div>
+  </div>
+
+  <div id="main-view">
+    <div id="countdown-banner">
+      <div id="countdown-title-display" style="font-size: 0.95rem; font-weight: bold;">⏳ イベント開始まで</div>
+      <div id="countdown-timer-display">00:00</div>
+    </div>
+
+    <div id="broadcast-banner">📢 <span id="broadcast-text"></span></div>
+
+    <!-- 変異イベントバナー -->
+    <div id="mutation-banner">
+      <div id="mutation-title-display" style="font-size:0.9rem;">✨ 変異イベント開催中</div>
+      <div id="mutation-timer-display" style="font-size:1.1rem; color:#facc15;">00:00</div>
+    </div>
+    
+    <div id="poll-banner">
+      <h3 id="poll-question-text" style="font-size: 1.1rem; color: #facc15;">📊 アンケートタイトル</h3>
+      <p style="font-size: 11px; color: #cbd5e1; margin-top: 2px;">残り時間: <span id="poll-timer">00</span>秒</p>
+      <div id="poll-options-container"></div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+    <div id="log-box"></div>
+  </div>
+
+  <!-- ヒューズ Modal -->
+  <div id="fuse-modal" class="modal">
+    <div class="modal-content" style="border-color:#0284c7;">
+      <h2 style="color:#38bdf8;">🌀 キャラヒューズ (4体合成)</h2>
+      <p style="font-size:12px; color:#cbd5e1; margin-top:4px;">所持キャラを4体選択してヒューズを行うと、確率で新しいキャラが誕生します。<br>高レアリティのキャラを入れるほど、より強力なキャラが出現しやすくなります！</p>
+      
+      <div style="margin-top:15px; background:#0f172a; padding:10px; border-radius:8px;">
+        <h3>選択中の素材キャラ (4体必要)</h3>
+        <div id="fuse-slots" style="display:flex; gap:10px; margin-top:8px;">
+          <div class="item-box" style="flex:1;" id="fuse-slot-0">空き</div>
+          <div class="item-box" style="flex:1;" id="fuse-slot-1">空き</div>
+          <div class="item-box" style="flex:1;" id="fuse-slot-2">空き</div>
+          <div class="item-box" style="flex:1;" id="fuse-slot-3">空き</div>
+        </div>
+        <button class="btn btn-limited" style="margin-top:12px; background:#0284c7;" onclick="executeFuse()">🌀 ヒューズ実行</button>
+      </div>
+
+      <h3 style="margin-top:15px;">素材を選択</h3>
+      <div id="fuse-inventory-list" class="grid" style="margin-top:10px;"></div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('fuse-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ガチャ Modal -->
+  <div id="gacha-modal" class="modal">
+    <div class="modal-content">
+      <h2>🎲 ガチャ (全10種・レア度一覧表示)</h2>
+      <div id="gacha-event-notice" style="display:none; color:#facc15; text-align:center; margin:5px 0; font-weight:bold;"></div>
+      <div id="gacha-list" class="grid"></div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('gacha-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- 限定ガチャ Modal -->
+  <div id="limited-gacha-modal" class="modal">
+    <div class="modal-content" style="border-color: #f59e0b; text-align: center;">
+      <h2 style="color:#f59e0b;">🔥 毎時4分限定 ガチャ 🔥</h2>
+      <p style="margin: 10px 0;">最高レアリティ **SUPREME** 「🌌 終焉の神・アルティメット」排出中！</p>
+      <div class="item-box" style="margin: 20px auto; max-width: 300px;">
+        <h3>限定ガチャ</h3>
+        <p>💰 1000 Co / 1回</p>
+        <div id="limited-gacha-rates" style="font-size:12px; color:#facc15; margin-top:5px;">
+          • SUPREME: 0.01%<br>• GOD: 4.99%<br>• UR: 95.00%
+        </div>
+        <button class="btn btn-limited" style="margin-top:10px;" onclick="rollLimitedGacha()">1回引く</button>
+      </div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('limited-gacha-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ガチャ演出用 Modal -->
+  <div id="gacha-anim-modal" class="modal" style="z-index: 300;">
+    <div style="text-align: center;">
+      <h1 id="gacha-anim-text">🌟 ガチャを回しています...</h1>
+    </div>
+  </div>
+
+  <!-- ガチャ結果 Modal -->
+  <div id="gacha-result-modal" class="modal" style="z-index: 301;">
+    <div class="modal-content" style="text-align: center; width: 400px;">
+      <h2 id="result-rarity" style="font-size: 2rem; margin-bottom: 10px;">UR</h2>
+      <h3 id="result-name" style="font-size: 1.5rem; margin-bottom: 20px;">キャラ名</h3>
+      <p>威力: <span id="result-power"></span></p>
+      <button class="btn" style="margin-top:20px;" onclick="closeModal('gacha-result-modal')">確認</button>
+    </div>
+  </div>
+
+  <!-- AI・ボス遭遇 Modal -->
+  <div id="ai-encounter-modal" class="modal">
+    <div class="modal-content" style="text-align: center; width: 450px; border-color: #f59e0b;">
+      <h2 id="ai-name-display" style="color:#f59e0b;">AIに遭遇した！</h2>
+      <p id="boss-ability-display" style="color:#ef4444; font-size:12px; margin-top:4px;"></p>
+      <div style="background:#0f172a; padding:15px; border-radius:8px; margin:15px 0;">
+        <p id="ai-chat-display" style="font-size: 1.1rem; font-style: italic;">「オレと戦う覚悟はあるか？」</p>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-danger" onclick="fightAI()">⚔️ 戦う (一発勝利判定)</button>
+        <button class="btn" onclick="leaveAI()">🏃 逃げる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 戦闘アニメーション Modal -->
+  <div id="battle-anim-modal" class="modal" style="z-index: 350;">
+    <div class="modal-content" style="text-align: center; width: 450px;">
+      <h2 id="battle-status-text" style="margin-bottom: 15px; color: #f8fafc;">⚔️ BATTLE START! ⚔️</h2>
+      <div class="battle-stage">
+        <div id="player-unit" class="battle-unit">🔵</div>
+        <div id="slash-effect" class="slash-effect"></div>
+        <div id="ai-unit" class="battle-unit">🔴</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 世界キャラインデックス Modal -->
+  <div id="index-modal" class="modal">
+    <div class="modal-content" style="border-color: #0284c7;">
+      <h2 style="color:#38bdf8;">📖 世界リアルタイム キャラキャラ・インデックス</h2>
+      <p style="font-size:12px; color:#cbd5e1; margin-top:4px;">現在オンライン上の全プレイヤーの所持キャラ数を集計中 (1of1判定対応)</p>
+      <div id="index-list" class="grid" style="margin-top:15px;"></div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('index-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- フレンド Modal -->
+  <div id="friends-modal" class="modal">
+    <div class="modal-content">
+      <h2>👥 フレンド & 受信ボックス</h2>
+      <div class="card" style="margin-top:10px;">
+        <h3>🔍 オンラインプレイヤー検索 & 申請</h3>
+        <input type="text" id="friend-search-input" placeholder="相手の「名前」を入力...">
+        <button class="btn" onclick="searchAndSendFriendRequest()">フレンド申請を送信</button>
+      </div>
+      <div class="card" style="margin-top:10px;">
+        <h3>📩 受信ボックス (申請一覧)</h3>
+        <div id="friend-requests-list" style="margin-top:5px;"></div>
+      </div>
+      <div class="card" style="margin-top:10px;">
+        <h3>🤝 フレンド一覧</h3>
+        <div id="friends-list" style="margin-top:5px;"></div>
+      </div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('friends-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- 能力強化ショップ Modal -->
+  <div id="shop-modal" class="modal">
+    <div class="modal-content">
+      <h2>🛒 能力強化ショップ</h2>
+      <div class="grid">
+        <div class="item-box"><h3>❤️ HP強化</h3><p>Lv: <span id="stat-hp">1</span></p><button class="btn" onclick="upgradeStat('hpLevel')">強化 (100 Co)</button></div>
+        <div class="item-box"><h3>⚔️ ATK強化</h3><p>Lv: <span id="stat-atk">1</span></p><button class="btn" onclick="upgradeStat('atkLevel')">強化 (100 Co)</button></div>
+        <div class="item-box"><h3>⚡ SPD強化</h3><p>Lv: <span id="stat-spd">1</span></p><button class="btn" onclick="upgradeStat('speedLevel')">強化 (100 Co)</button></div>
+      </div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('shop-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- スキンショップ Modal -->
+  <div id="skin-shop-modal" class="modal">
+    <div class="modal-content" style="border-color: #ec4899;">
+      <h2 style="color: #ec4899;">🎨 キャラスキンショップ</h2>
+      <p style="font-size:12px; color:#cbd5e1; margin-top:4px;">購入したスキンはインベントリでいつでもON/OFFを切り替えられます。</p>
+      <div id="skin-shop-list" class="grid"></div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('skin-shop-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- 所持キャラ売却ショップ Modal -->
+  <div id="sell-shop-modal" class="modal">
+    <div class="modal-content" style="border-color: #eab308;">
+      <h2 style="color: #facc15;">💰 所持キャラ売却ショップ</h2>
+      <p style="font-size:12px; color:#cbd5e1; margin-top:4px;">不要なキャラを売却してコインに還元できます。（装備中のキャラは売却できません）</p>
+      <div id="sell-shop-list" class="grid"></div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('sell-shop-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- インベントリ Modal -->
+  <div id="inventory-modal" class="modal">
+    <div class="modal-content">
+      <h2>🎒 所持キャラ・装備・強化</h2>
+      <div id="inventory-list" class="grid"></div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('inventory-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <!-- 管理者パネル Modal -->
+  <div id="admin-modal" class="modal">
+    <div class="modal-content" style="border-color: #a855f7;">
+      <h2 style="color:#a855f7;">👑 管理者制御パネル</h2>
+      
+      <!-- 強制送還（自分のサーバーに引き寄せる） -->
+      <div class="card" style="border: 2px solid #ef4444; background: #311212; margin-top: 10px;">
+        <h3 style="color:#f87171;">🌀 強制送還（相手を自分のサーバーへ接続強制＆テレポート）</h3>
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <input type="text" id="admin-tp-username" placeholder="対象のプレイヤー名を入力..." style="margin-bottom:0;">
+          <button class="btn btn-danger" style="width:160px; margin-top:0;" onclick="adminSummonPlayer()">強制送還・召喚</button>
+        </div>
+      </div>
+
+      <!-- 変異イベント制御 & キャラ変異付与 -->
+      <div class="card" style="border: 2px solid #d946ef; background: #2a1128; margin-top: 10px;">
+        <h3 style="color:#f43f5e;">✨ 変異イベント & キャラ変異付与</h3>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <select id="admin-mutation-select">
+            <option value="GOLD">✨ GOLD (攻撃力×2)</option>
+            <option value="DIAMOND">💎 DIAMOND (攻撃力×3)</option>
+            <option value="RAINBOW">🌈 RAINBOW (攻撃力×5)</option>
+            <option value="DIVINE">🔥 DIVINE (攻撃力×10)</option>
+          </select>
+          <button class="btn" style="background:#d946ef; width:150px;" onclick="adminStartMutationEvent()">イベント開始</button>
+        </div>
+        <div style="border-top:1px solid #475569; margin-top:8px; padding-top:8px;">
+          <p style="font-size:12px; color:#cbd5e1;">所持キャラに手動で変異を付与:</p>
+          <div style="display:flex; gap:6px; margin-top:4px;">
+            <select id="admin-my-char-select" style="margin-bottom:0;"></select>
+            <select id="admin-give-mut-type" style="margin-bottom:0; width:130px;">
+              <option value="GOLD">GOLD</option>
+              <option value="DIAMOND">DIAMOND</option>
+              <option value="RAINBOW">RAINBOW</option>
+              <option value="DIVINE">DIVINE</option>
+            </select>
+            <button class="btn" style="background:#10b981; width:100px; margin-top:0;" onclick="adminApplyMutationToChar()">変異付与</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ヒューズラック制御 (1倍〜100倍) -->
+      <div class="card" style="border: 2px solid #0284c7; background: #0c4a6e; margin-top: 10px;">
+        <h3 style="color:#38bdf8;">🌀 ヒューズラック設定 (1倍〜100倍)</h3>
+        <div style="display:flex; gap:10px; margin-top:6px; align-items:center;">
+          <label style="font-size:12px; color:#cbd5e1;">倍率:</label>
+          <input type="number" id="admin-fuse-luck-mult" min="1" max="100" value="1" style="width:80px; margin-bottom:0;">
+          <label style="font-size:12px; color:#cbd5e1;">有効時間(分):</label>
+          <input type="number" id="admin-fuse-luck-dur" min="1" value="5" style="width:80px; margin-bottom:0;">
+          <button class="btn" style="background:#0284c7; width:120px; margin-top:0;" onclick="adminStartFuseLuckEvent()">発動</button>
+        </div>
+      </div>
+
+      <!-- ヒューズクラフト追加 -->
+      <div class="card" style="border: 2px solid #0284c7; background: #075985; margin-top: 10px;">
+        <h3 style="color:#38bdf8;">🛠️ ヒューズクラフト設定・公開</h3>
+        <p style="font-size:11px; color:#cbd5e1; margin-top:2px;">条件素材（最大4体）と完成キャラ、確率、使用上限人数を設定してオンライン公開します。</p>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:6px;">
+          <div><label style="font-size:10px;">素材1レア度/名前</label><input type="text" id="admin-fc-req1" placeholder="例: GOD 太陽の神"></div>
+          <div><label style="font-size:10px;">素材2レア度/名前</label><input type="text" id="admin-fc-req2" placeholder="任意"></div>
+          <div><label style="font-size:10px;">素材3レア度/名前</label><input type="text" id="admin-fc-req3" placeholder="任意"></div>
+          <div><label style="font-size:10px;">素材4レア度/名前</label><input type="text" id="admin-fc-req4" placeholder="任意"></div>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px; margin-top:4px;">
+          <input type="text" id="admin-fc-out-name" placeholder="完成キャラ名">
+          <input type="text" id="admin-fc-out-rarity" placeholder="完成レア度(例: SUPREME)">
+          <input type="number" id="admin-fc-out-power" placeholder="威力(例: 50000)">
+        </div>
+        <div style="display:flex; gap:10px; margin-top:4px; align-items:center;">
+          <label style="font-size:12px;">出現確率(%):</label>
+          <input type="number" id="admin-fc-chance" value="100" min="1" max="100" style="width:80px; margin-bottom:0;">
+          <label style="font-size:12px;">使用上限人数:</label>
+          <input type="number" id="admin-fc-maxuses" value="0" placeholder="0は無制限" style="width:100px; margin-bottom:0;">
+          <button class="btn" style="background:#10b981; flex:1; margin-top:0;" onclick="adminPublishFuseRecipe()">公開・反映</button>
+        </div>
+      </div>
+
+      <!-- ボスラック制御 (1倍〜100倍) -->
+      <div class="card" style="border: 2px solid #ef4444; background: #2d1212; margin-top: 10px;">
+        <h3 style="color:#f87171;">👹 ボス出現率 (ボスラック) 設定 (1倍〜100倍)</h3>
+        <div style="display:flex; gap:10px; margin-top:6px; align-items:center;">
+          <label style="font-size:12px; color:#cbd5e1;">ボスラック倍率:</label>
+          <input type="number" id="admin-boss-luck-input" min="1" max="100" value="1" style="width:100px; margin-bottom:0;">
+          <button class="btn btn-danger" style="width:120px; margin-top:0;" onclick="adminSetBossLuck()">設定適用</button>
+        </div>
+      </div>
+
+      <!-- チェックマーク付与機能 -->
+      <div class="card" style="border: 2px solid #38bdf8; background: #0369a1; margin-top: 10px;">
+        <h3 style="color:#f8fafc;">☑️ 認証マーク（チェックマーク）の管理</h3>
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <input type="text" id="admin-badge-username" placeholder="対象のプレイヤー名を入力..." style="margin-bottom:0;">
+          <button class="btn" style="width:120px; margin-top:0;" onclick="adminGiveBadge()">送信</button>
+        </div>
+        <button class="btn" style="background:#10b981; margin-top:6px;" onclick="adminGiveSelfBadge()">自分にマークをつける</button>
+      </div>
+
+      <!-- 全体カウントダウン配信機能 -->
+      <div class="card" style="border: 2px solid #38bdf8; background: #0c4a6e; margin-top: 10px;">
+        <h3 style="color:#38bdf8;">⏳ 全体カウントダウン配信 (全体放送)</h3>
+        <input type="text" id="admin-cd-title" placeholder="何のカウントダウンかを入力 (例: ボス出現まで, ガチャイベント開始)" style="margin-top:6px;">
+        <div style="display:flex; gap:10px; margin-top:4px;">
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#cbd5e1;">分:</label>
+            <input type="number" id="admin-cd-min" value="1" min="0" style="margin-bottom:0;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#cbd5e1;">秒:</label>
+            <input type="number" id="admin-cd-sec" value="0" min="0" max="59" style="margin-bottom:0;">
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:8px;">
+          <button class="btn" style="background:#0284c7; flex:1;" onclick="adminStartCountdown()">🚀 カウントダウン公開</button>
+          <button class="btn btn-danger" style="flex:1;" onclick="adminStopCountdown()">⛔ 強制終了</button>
+        </div>
+      </div>
+
+      <!-- ガチャラックイベント設定機能 -->
+      <div class="card" style="border: 2px solid #eab308; background: #1e1b4b; margin-top: 10px;">
+        <h3 style="color:#facc15;">🍀 ガチャラック（倍率）イベント設定 (2～50倍)</h3>
+        <div style="display:flex; gap:10px; margin-top:8px;">
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#cbd5e1;">倍率 (ラック):</label>
+            <select id="admin-luck-multiplier">
+              <option value="2">2倍ラック</option>
+              <option value="3">3倍ラック</option>
+              <option value="4">4倍ラック</option>
+              <option value="5">5倍ラック</option>
+              <option value="6">6倍ラック</option>
+              <option value="7">7倍ラック</option>
+              <option value="8">8倍ラック</option>
+              <option value="9">9倍ラック</option>
+              <option value="10">10倍ラック</option>
+              <option value="15">15倍ラック</option>
+              <option value="20">20倍ラック</option>
+              <option value="25">25倍ラック</option>
+              <option value="30">30倍ラック</option>
+              <option value="40">40倍ラック</option>
+              <option value="50">50倍ラック (最大！)</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px; color:#cbd5e1;">開催時間 (分):</label>
+            <select id="admin-luck-duration">
+              <option value="1">1分間</option>
+              <option value="3">3分間</option>
+              <option value="5">5分間</option>
+              <option value="10">10分間</option>
+              <option value="30">30分間</option>
+              <option value="60">60分間</option>
+              <option value="0">無制限 (手動終了)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button class="btn btn-limited" style="flex:1; background:#ca8a04;" onclick="adminStartLuckEvent()">🚀 ラックイベント開催</button>
+          <button class="btn btn-danger" style="flex:1;" onclick="adminStopLuckEvent()">⛔ イベント強制終了</button>
+        </div>
+      </div>
+
+      <!-- 全体アンケート作成機能 -->
+      <div class="card" style="border: 2px solid #6366f1; background: #1e1b4b; margin-top: 10px;">
+        <h3 style="color:#818cf8;">📊 全体アンケート配信</h3>
+        <input type="text" id="admin-poll-question" placeholder="質問を入力 (例: 次に追加してほしいキャラは？)" style="margin-top:6px;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+          <input type="text" id="admin-poll-opt1" placeholder="回答1 (例: 火属性)">
+          <input type="text" id="admin-poll-opt2" placeholder="回答2 (例: 水属性)">
+          <input type="text" id="admin-poll-opt3" placeholder="回答3 (例: 風属性・任意)">
+          <input type="text" id="admin-poll-opt4" placeholder="回答4 (例: 闇属性・任意)">
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; margin-top:4px;">
+          <label style="font-size:12px; color:#cbd5e1; width:120px;">制限時間 (秒):</label>
+          <input type="number" id="admin-poll-time" value="30" style="margin-bottom:0;">
+          <button class="btn" style="background:#4f46e5;" onclick="adminCreatePoll()">📡 全体アンケート公開</button>
+        </div>
+      </div>
+
+      <!-- ボス手動召喚機能 -->
+      <div class="card" style="border: 2px solid #ef4444; background: #2d1212; margin-top: 10px;">
+        <h3 style="color:#f87171;">👹 ボス緊急召喚</h3>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <select id="admin-boss-select" style="margin-bottom:0;">
+            <option value="0">🔴 獄炎の魔王 (Lv.500 / ATK:5,000)</option>
+            <option value="1">⚡ 狂乱の雷神 (Lv.1000 / ATK:12,000)</option>
+            <option value="2">❄️ 氷結の女帝 (Lv.2500 / ATK:30,000)</option>
+            <option value="3">🌌 終焉のヴォイド (Lv.10000 / ATK:150,000)</option>
+          </select>
+          <button class="btn btn-danger" style="width:140px;" onclick="adminSpawnBoss()">⚠️ 今すぐ出現</button>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:15px; margin-top:15px; flex-wrap:wrap;">
+        <div class="card" style="flex:1; min-width:200px;">
+          <h3>👤 任意のキャラを取得</h3>
+          <select id="admin-select-rarity">
+            <option value="UR">UR (最強クラス)</option>
+            <option value="SSR">SSR (超激レア)</option>
+            <option value="SR">SR (激レア)</option>
+          </select>
+          <input type="text" id="admin-select-name" placeholder="好きなキャラ名 (例: 創造神)">
+          <input type="number" id="admin-select-power" placeholder="威力 (例: 99999)">
+          <button class="btn" onclick="adminGiveCharacter()">キャラを入手</button>
+        </div>
+
+        <div class="card" style="flex:1; min-width:200px;">
+          <h3>💰 コイン増減 (マイナス可)</h3>
+          <input type="number" id="admin-coin-input" placeholder="例: 1000 や -500">
+          <button class="btn" onclick="adminAddCoins()">反映</button>
+        </div>
+
+        <div class="card" style="flex:1; min-width:200px;">
+          <h3>🎫 特典コード作成 & 同期配布</h3>
+          <input type="text" id="admin-code-key" placeholder="コード名 (例: GIFT2026)">
+          <input type="number" id="admin-code-max-uses" placeholder="使用可能人数 (0は無制限)">
+          <select id="admin-code-type" onchange="toggleAdminCodeInputs()">
+            <option value="coins">コイン付与</option>
+            <option value="char">限定キャラ付与</option>
+          </select>
+          <input type="number" id="admin-code-coins" placeholder="付与コイン数">
+          <div id="admin-code-char-inputs" style="display:none;">
+            <input type="text" id="admin-code-charname" placeholder="キャラ名">
+            <select id="admin-code-charrarity">
+              <option value="UR">UR</option>
+              <option value="SSR">SSR</option>
+              <option value="SR">SR</option>
+            </select>
+            <input type="number" id="admin-code-charpower" placeholder="キャラ威力">
+          </div>
+          <button class="btn" onclick="adminCreateCode()">コード作成・全員に配布</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:10px;">
+        <h3>🔥 限定ガチャ制御</h3>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-limited" onclick="adminStartLimitedGacha()">強制的にガチャ開始</button>
+          <button class="btn btn-danger" onclick="adminEndLimitedGacha()">強制的にガチャ終了</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:10px;">
+        <h3>📢 全体放送送信 (他端末にも即時同期)</h3>
+        <input type="text" id="admin-broadcast-msg" placeholder="放送テキストを入力...">
+        <button class="btn btn-danger" onclick="adminSendBroadcast()">全端末へ送信</button>
+      </div>
+      <button class="btn" style="margin-top:15px;" onclick="closeModal('admin-modal')">閉じる</button>
+    </div>
+  </div>
+
+  <script>
+    const FIELD_LIMIT = 5000;
+
+    const BOSS_TYPES = [
+      { id: 0, name: "🔴 獄炎の魔王", level: 500, atk: 5000, ability: "🔥 火炎ブレス (周囲燃焼ダメージ)", color: "#ef4444" },
+      { id: 1, name: "⚡ 狂乱の雷神", level: 1000, atk: 12000, ability: "⚡ 麻痺雷撃 (行動力阻害)", color: "#eab308" },
+      { id: 2, name: "❄️ 氷結の女帝", level: 2500, atk: 30000, ability: "❄️ 絶対ゼロ (広範囲凍結)", color: "#38bdf8" },
+      { id: 3, name: "🌌 終焉のヴォイド", level: 10000, atk: 150000, ability: "🌌 次元崩壊 (全アビリティ即死級)", color: "#a855f7" }
+    ];
+
+    const SKIN_LIST = [
+      { id: "skin_golden", name: "✨ ゴールデンオーラ", cost: 2000, targetName: "全キャラ対応", color: "#facc15" },
+      { id: "skin_cyber", name: "🤖 サイバーネオン", cost: 5000, targetName: "全キャラ対応", color: "#38bdf8" },
+      { id: "skin_dark", name: "🦇 ダークヴェノム", cost: 10000, targetName: "全キャラ対応", color: "#a855f7" }
+    ];
+
+    const MUTATION_TYPES = {
+      'GOLD': { name: 'GOLD', mult: 2, color: '#facc15' },
+      'DIAMOND': { name: 'DIAMOND', mult: 3, color: '#38bdf8' },
+      'RAINBOW': { name: 'RAINBOW', mult: 5, color: '#d946ef' },
+      'DIVINE': { name: 'DIVINE', mult: 10, color: '#f43f5e' }
+    };
+
+    let userData = {
+      username: "PLAYER_" + Math.floor(Math.random() * 8999 + 1000),
+      coins: 1000,
+      stats: { hpLevel: 1, atkLevel: 1, speedLevel: 1 },
+      inventory: [],
+      equippedCharId: null,
+      claimedCodes: {},
+      isAdminUnlocked: false,
+      lastLoginDate: null,
+      friends: [],
+      friendRequests: [],
+      hasBadge: false,
+      ownedSkins: [],
+      activeSkinId: null
+    };
+
+    let badgedUsers = {};
+    let activeCodes = {};
+    let isLimitedGachaActive = false;
+    let adminForcedLimited = false;
+
+    let luckEventState = { active: false, multiplier: 1, endTime: 0 };
+    let fuseLuckState = { active: false, multiplier: 1, endTime: 0 };
+    let customFuseRecipes = []; // 管理者が作成したヒューズクラフトレシピの一覧
+
+    let selectedFuseCharIds = [null, null, null, null];
+
+    let bossLuckMultiplier = 1;
+    let activeCountdown = null;
+    let countdownInterval = null;
+    let activePoll = null;
+    let pollTimerInterval = null;
+
+    let activeMutationEvent = null; // { type: 'GOLD'|'DIAMOND'|'RAINBOW'|'DIVINE', endTime: number }
+    let globalCharIndex = {}; // 全オンラインプレイヤーの所持キャラ集計データ
+
+    const gachaData = [];
+    const gachaRarityConfigs = [
+      { id: 1, name: "第1弾 英雄ガチャ", rarities: [{r:'UR', name:'UR (超極秘)', baseRate:5}, {r:'SSR', name:'SSR (超激レア)', baseRate:20}, {r:'SR', name:'SR (激レア)', baseRate:25}, {r:'R', name:'R (ノーマル)', baseRate:50}] },
+      { id: 2, name: "第2弾 神魔ガチャ", rarities: [{r:'GOD', name:'GOD (神級)', baseRate:3}, {r:'LR', name:'LR (伝説)', baseRate:17}, {r:'SSR', name:'SSR (超激レア)', baseRate:30}, {r:'SR', name:'SR (激レア)', baseRate:50}] },
+      { id: 3, name: "第3弾 龍王ガチャ", rarities: [{r:'EX', name:'EX (限定)', baseRate:5}, {r:'SSS', name:'SSS (極級)', baseRate:20}, {r:'SS', name:'SS (特級)', baseRate:35}, {r:'S', name:'S (上級)', baseRate:40}] },
+      { id: 4, name: "第4弾 元素ガチャ", rarities: [{r:'UR', name:'UR (極大)', baseRate:5}, {r:'SSR', name:'SSR (大)', baseRate:25}, {r:'SR', name:'SR (中)', baseRate:30}, {r:'R', name:'R (小)', baseRate:40}] },
+      { id: 5, name: "第5弾 異界ガチャ", rarities: [{r:'GOD', name:'GOD (異神)', baseRate:2}, {r:'EX', name:'EX (特異)', baseRate:18}, {r:'SSR', name:'SSR (上級)', baseRate:30}, {r:'SR', name:'SR (一般)', baseRate:50}] },
+      { id: 6, name: "第6弾 漆黒ガチャ", rarities: [{r:'UR', name:'UR (深淵)', baseRate:5}, {r:'SSS', name:'SSS (暗黒)', baseRate:20}, {r:'SS', name:'SS (影)', baseRate:30}, {r:'S', name:'S (闇)', baseRate:45}] },
+      { id: 7, name: "第7弾 聖光ガチャ", rarities: [{r:'EX', name:'EX (聖皇)', baseRate:5}, {r:'LR', name:'LR (大聖)', baseRate:20}, {r:'SR', name:'SR (騎士)', baseRate:35}, {r:'R', name:'R (見習い)', baseRate:40}] },
+      { id: 8, name: "第8弾 未来ガチャ", rarities: [{r:'GOD', name:'GOD (未来神)', baseRate:4}, {r:'UR', name:'UR (超技術)', baseRate:21}, {r:'SSR', name:'SSR (先進)', baseRate:30}, {r:'SR', name:'SR (標準)', baseRate:45}] },
+      { id: 9, name: "第9弾 武神ガチャ", rarities: [{r:'SSS', name:'SSS (武神)', baseRate:5}, {r:'SS', name:'SS (極意)', baseRate:20}, {r:'S', name:'S (達人)', baseRate:35}, {r:'A', name:'A (熟練)', baseRate:40}] },
+      { id: 10, name: "第10弾 終焉ガチャ", rarities: [{r:'GOD', name:'GOD (終焉)', baseRate:5}, {r:'EX', name:'EX (滅亡)', baseRate:15}, {r:'LR', name:'LR (崩壊)', baseRate:30}, {r:'UR', name:'UR (兆候)', baseRate:50}] }
+    ];
+
+    gachaRarityConfigs.forEach(conf => {
+      const items = [];
+      for (let c = 1; c <= 200; c++) {
+        let rIndex = c > 190 ? 0 : c > 150 ? 1 : c > 100 ? 2 : 3;
+        let selectedRarity = conf.rarities[rIndex];
+        items.push({ id: `g${conf.id}_c${c}`, name: `${conf.name} キャラ#${c}`, rarity: selectedRarity.r, power: Math.floor(c * 2) + (conf.id * 15), rIndex: rIndex });
+      }
+      gachaData.push({ id: conf.id, name: conf.name, cost: 100 * conf.id, rarities: conf.rarities, items });
+    });
+
+    function log(msg) {
+      const box = document.getElementById('log-box');
+      const p = document.createElement('div');
+      p.innerText = msg;
+      box.appendChild(p);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function getCharFullName(char) {
+      if (!char) return "";
+      return char.mutation ? `[${char.mutation}] ${char.name}` : char.name;
+    }
+
+    function checkIs1of1(char) {
+      if (!char) return false;
+      const fullName = getCharFullName(char);
+      return globalCharIndex[fullName] === 1;
+    }
+
+    function updateUI() {
+      document.getElementById('user-coins').innerText = userData.coins.toLocaleString();
+      document.getElementById('user-id').innerText = userData.username || "LOCAL_PLAYER";
+      document.getElementById('stat-hp').innerText = userData.stats.hpLevel;
+      document.getElementById('stat-atk').innerText = userData.stats.atkLevel;
+      document.getElementById('stat-spd').innerText = userData.stats.speedLevel;
+      
+      if (userData.isAdminUnlocked) {
+        document.getElementById('admin-btn').style.display = 'block';
+        populateAdminCharSelect();
+      }
+
+      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
+      if (equipped) {
+        let displayStr = `[${equipped.rarity}] ${getCharFullName(equipped)}`;
+        if (checkIs1of1(equipped)) displayStr += " 👑1OF1";
+        document.getElementById('equipped-char-display').innerText = displayStr;
+      } else {
+        document.getElementById('equipped-char-display').innerText = "なし";
+      }
+
+      const btnLimited = document.getElementById('limited-gacha-btn');
+      btnLimited.style.display = isLimitedGachaActive ? 'block' : 'none';
+
+      const luckBanner = document.getElementById('luck-banner');
+      if (luckEventState.active) {
+        luckBanner.style.display = 'block';
+        document.getElementById('luck-banner-text').innerText = `ガチャラック ${luckEventState.multiplier}倍 開催中!`;
+      } else {
+        luckBanner.style.display = 'none';
+      }
+
+      renderInventory();
+      renderFuseUI();
+      renderSellShop();
+      renderSkinShop();
+      renderFriendsUI();
+      renderGachas();
+      renderIndexModal();
+    }
+
+    function populateAdminCharSelect() {
+      const sel = document.getElementById('admin-my-char-select');
+      if (!sel) return;
+      sel.innerHTML = '';
+      userData.inventory.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.innerText = `[${c.rarity}] ${c.name} (Lv.${c.level||1})`;
+        sel.appendChild(opt);
+      });
+    }
+
+    function updateLuckTimer() {
+      if (!luckEventState.active) return;
+      if (luckEventState.endTime === 0) {
+        document.getElementById('luck-timer').innerText = "無制限";
+        return;
+      }
+      const remainSec = Math.max(0, Math.floor((luckEventState.endTime - Date.now()) / 1000));
+      if (remainSec <= 0) {
+        luckEventState.active = false;
+        luckEventState.multiplier = 1;
+        updateUI();
+        log('🍀 ラックイベントが終了しました。');
+        return;
+      }
+      const m = Math.floor(remainSec / 60).toString().padStart(2, '0');
+      const s = (remainSec % 60).toString().padStart(2, '0');
+      document.getElementById('luck-timer').innerText = `${m}:${s}`;
+    }
+    setInterval(updateLuckTimer, 1000);
+
+    function updateFuseLuckTimer() {
+      if (!fuseLuckState.active) return;
+      if (fuseLuckState.endTime <= Date.now()) {
+        fuseLuckState.active = false;
+        fuseLuckState.multiplier = 1;
+        log('🌀 ヒューズラックイベントが終了しました。');
+      }
+    }
+    setInterval(updateFuseLuckTimer, 1000);
+
+    // 毎時間の変異イベントタイマー設定 (毎時 10-12m:GOLD, 20-22m:DIAMOND, 30-32m:RAINBOW, 40-42m:DIVINE)
+    function checkHourlyMutationEvents() {
+      const now = new Date();
+      const m = now.getMinutes();
+      let activeType = null;
+
+      if (m >= 10 && m < 12) activeType = 'GOLD';
+      else if (m >= 20 && m < 22) activeType = 'DIAMOND';
+      else if (m >= 30 && m < 32) activeType = 'RAINBOW';
+      else if (m >= 40 && m < 42) activeType = 'DIVINE';
+
+      const banner = document.getElementById('mutation-banner');
+
+      if (activeType || (activeMutationEvent && Date.now() < activeMutationEvent.endTime)) {
+        if (!activeMutationEvent || (activeType && activeMutationEvent.type !== activeType)) {
+          activeMutationEvent = { type: activeType, endTime: Date.now() + (2 * 60 * 1000) };
+          broadcastBroadcast(`✨【変異イベント】「${activeType}」変異イベントがスタートしました！(2分間)`);
+        }
+        banner.style.display = 'block';
+        const mutObj = MUTATION_TYPES[activeMutationEvent.type];
+        document.getElementById('mutation-title-display').innerHTML = `<span class="mut-${mutObj.name}">✨ ${mutObj.name} 変異イベント中 (撃破時4%付与)</span>`;
+        
+        const remainSec = Math.max(0, Math.floor((activeMutationEvent.endTime - Date.now()) / 1000));
+        const minStr = Math.floor(remainSec / 60).toString().padStart(2, '0');
+        const secStr = (remainSec % 60).toString().padStart(2, '0');
+        document.getElementById('mutation-timer-display').innerText = `${minStr}:${secStr}`;
+
+        if (remainSec <= 0) {
+          activeMutationEvent = null;
+          banner.style.display = 'none';
+        }
+      } else {
+        activeMutationEvent = null;
+        banner.style.display = 'none';
+      }
+    }
+    setInterval(checkHourlyMutationEvents, 1000);
+
+    function claimLoginBonus() {
+      const today = new Date().toDateString();
+      if (userData.lastLoginDate === today) return log('⚠️ 今日のログインボーナスは既に受け取っています。');
+      userData.coins += 500;
+      userData.lastLoginDate = today;
+      updateUI();
+      saveToCloud();
+      log(`🎁 ログインボーナス獲得！ +500 コイン！`);
+    }
+
+    function changeUsername() {
+      const newName = prompt("新しいユーザーネームを入力してください:", userData.username);
+      if (newName && newName.trim() !== "") {
+        userData.username = newName.trim();
+        updateUI();
+        saveToCloud();
+        broadcastMyState();
+        log(`👤 ユーザーネームを「${userData.username}」に変更しました。`);
+      }
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    function resetData() {
+      if (confirm("本当にデータを初期化しますか？すべてのデータが削除されます。")) {
+        localStorage.removeItem('sw_save_data');
+        location.reload();
+      }
+    }
+
+    function submitCode() {
+      const input = document.getElementById('code-input');
+      const code = input.value.trim();
+      input.value = '';
+
+      if (code === 'ADMINP45') {
+        userData.isAdminUnlocked = true;
+        saveToCloud();
+        updateUI();
+        openModal('admin-modal');
+        log('🔑 管理者権限が解放されました！');
+        return;
+      }
+
+      if (activeCodes[code]) {
+        const cData = activeCodes[code];
+        const userClaimedCount = userData.claimedCodes[code] || 0;
+
+        if (cData.maxUses > 0 && cData.usedCount >= cData.maxUses) {
+          return log('❌ このコードは全体使用回数制限に達しました。');
+        }
+
+        userData.claimedCodes[code] = userClaimedCount + 1;
+        cData.usedCount = (cData.usedCount || 0) + 1;
+
+        if (cData.type === 'coins') {
+          userData.coins += cData.coins;
+          log(`🎉 コード適用！ +${cData.coins}コイン獲得！`);
+        } else if (cData.type === 'char') {
+          const newChar = { id: 'code_char_' + Date.now(), name: cData.charName, rarity: cData.charRarity || 'UR', level: 1, power: cData.charPower || 5000 };
+          userData.inventory.push(newChar);
+          log(`🎉 コード適用！ キャラ「[${newChar.rarity}] ${newChar.name}」を獲得！`);
+        }
+        
+        updateUI();
+        saveToCloud();
+        broadcastAdminCodes();
+      } else {
+        log('❌ 無効なコードです。');
+      }
+    }
+
+    function checkLimitedGachaTimer() {
+      const now = new Date();
+      const minutes = now.getMinutes();
+      const timerActive = minutes >= 0 && minutes < 4;
+      
+      const prev = isLimitedGachaActive;
+      isLimitedGachaActive = adminForcedLimited || timerActive;
+
+      if (prev !== isLimitedGachaActive) {
+        updateUI();
+        if (isLimitedGachaActive) log('🔥 限定ガチャが開催されました！(毎時4分間限定)');
+      }
+    }
+    setInterval(checkLimitedGachaTimer, 3000);
+
+    function rollLimitedGacha() {
+      if (!isLimitedGachaActive) return log('❌ 限定ガチャは開催されていません。');
+      if (userData.coins < 1000) return log('❌ コインが足りません (1000 Co必要)');
+
+      userData.coins -= 1000;
+      updateUI();
+      closeModal('limited-gacha-modal');
+      openModal('gacha-anim-modal');
+
+      setTimeout(() => {
+        closeModal('gacha-anim-modal');
+        const mult = luckEventState.active ? luckEventState.multiplier : 1;
+
+        let supremeRate = 0.01 * mult;
+        let godRate = 4.99 * mult;
+        const rand = Math.random() * 100;
+
+        let picked = {};
+
+        if (rand < supremeRate) {
+          picked = { id: 'supreme_god_' + Date.now(), name: '🌌 終焉の神・アルティメット', rarity: 'SUPREME', power: 999999 };
+        } else if (rand < supremeRate + godRate) {
+          picked = { id: 'god_lim_' + Date.now(), name: '🔥 太陽の神アポロン', rarity: 'GOD', power: 15000 };
+        } else {
+          picked = { id: 'ur_lim_' + Date.now(), name: '⚡ 時空の守護者', rarity: 'UR', power: 4500 };
+        }
+
+        userData.inventory.push({ ...picked, level: 1 });
+        updateUI();
+        saveToCloud();
+        broadcastMyState();
+
+        document.getElementById('result-rarity').innerText = picked.rarity;
+        document.getElementById('result-rarity').className = 'rarity-' + picked.rarity.toLowerCase();
+        document.getElementById('result-name').innerText = picked.name;
+        document.getElementById('result-name').className = 'rarity-' + picked.rarity.toLowerCase();
+        document.getElementById('result-power').innerText = picked.power;
+        openModal('gacha-result-modal');
+        log(`🎉 限定ガチャ成果：【${picked.rarity}】${picked.name} を獲得！`);
+      }, 1500);
+    }
+
+    function renderGachas() {
+      const list = document.getElementById('gacha-list');
+      const eventNotice = document.getElementById('gacha-event-notice');
+      const mult = luckEventState.active ? luckEventState.multiplier : 1;
+
+      if (luckEventState.active) {
+        eventNotice.style.display = 'block';
+        eventNotice.innerText = `🔥 開催中: ラック ${mult}倍 イベント中！高レア排出率大幅アップ！ 🔥`;
+      } else {
+        eventNotice.style.display = 'none';
+      }
+
+      list.innerHTML = '';
+      gachaData.forEach(g => {
+        const div = document.createElement('div');
+        div.className = 'item-box';
+        let rarityListHtml = '<div style="font-size:11px; margin:6px 0; text-align:left; background:#0f172a; padding:5px; border-radius:4px;">';
+        
+        g.rarities.forEach((r, idx) => {
+          let calcRate = r.baseRate;
+          if (idx === 0 || idx === 1) calcRate = Math.min(100, r.baseRate * mult);
+          rarityListHtml += `<div>• <span class="rarity-${r.r.toLowerCase()}">${r.name}</span>: ${calcRate.toFixed(1)}%${mult > 1 && (idx === 0 || idx === 1) ? ' 🚀' : ''}</div>`;
+        });
+        rarityListHtml += '</div>';
+        div.innerHTML = `<h3>${g.name}</h3><p>💰 ${g.cost} Co</p>${rarityListHtml}<button class="btn" onclick="rollGacha(${g.id})">ガチャを引く</button>`;
+        list.appendChild(div);
+      });
+    }
+
+    function rollGacha(gachaId) {
+      const gacha = gachaData.find(g => g.id === gachaId);
+      if (!gacha || userData.coins < gacha.cost) return log('❌ コイン不足！');
+      userData.coins -= gacha.cost;
+      updateUI();
+      closeModal('gacha-modal');
+      openModal('gacha-anim-modal');
+      setTimeout(() => {
+        closeModal('gacha-anim-modal');
+
+        const mult = luckEventState.active ? luckEventState.multiplier : 1;
+        const rTopRate = Math.min(100, gacha.rarities[0].baseRate * mult);
+        const rSubRate = Math.min(100, gacha.rarities[1].baseRate * mult);
+
+        const rand = Math.random() * 100;
+        let targetIndex = 3;
+
+        if (rand < rTopRate) targetIndex = 0;
+        else if (rand < rTopRate + rSubRate) targetIndex = 1;
+        else if (rand < rTopRate + rSubRate + gacha.rarities[2].baseRate) targetIndex = 2;
+
+        const candidateItems = gacha.items.filter(i => i.rIndex === targetIndex);
+        const picked = candidateItems.length > 0 ? candidateItems[Math.floor(Math.random() * candidateItems.length)] : gacha.items[0];
+
+        const existing = userData.inventory.find(i => i.id === picked.id);
+        if (existing) { existing.level = (existing.level || 1) + 1; existing.power += 10; }
+        else { userData.inventory.push({ ...picked, level: 1 }); }
+        
+        updateUI(); saveToCloud(); broadcastMyState();
+        document.getElementById('result-rarity').innerText = picked.rarity;
+        document.getElementById('result-rarity').className = 'rarity-' + picked.rarity.toLowerCase();
+        document.getElementById('result-name').innerText = picked.name;
+        document.getElementById('result-name').className = 'rarity-' + picked.rarity.toLowerCase();
+        document.getElementById('result-power').innerText = picked.power;
+        openModal('gacha-result-modal');
+        log(`🎉 【${picked.rarity}】${picked.name} を獲得！`);
+      }, 1500);
+    }
+
+    // --- ヒューズ (合成) ロジック ---
+    function renderFuseUI() {
+      for (let i = 0; i < 4; i++) {
+        const slotEl = document.getElementById(`fuse-slot-${i}`);
+        if (!slotEl) continue;
+        const charId = selectedFuseCharIds[i];
+        if (charId) {
+          const char = userData.inventory.find(c => c.id === charId);
+          if (char) {
+            slotEl.innerHTML = `<b class="rarity-${(char.rarity||'r').toLowerCase()}">[${char.rarity||'R'}] ${char.name}</b><br><button class="btn btn-danger" style="padding:2px 4px; font-size:10px; margin-top:4px;" onclick="deselectFuseChar(${i})">解除</button>`;
+          } else {
+            selectedFuseCharIds[i] = null;
+            slotEl.innerText = "空き";
+          }
+        } else {
+          slotEl.innerText = "空き";
+        }
+      }
+
+      const invList = document.getElementById('fuse-inventory-list');
+      if (!invList) return;
+      invList.innerHTML = '';
+
+      userData.inventory.forEach(c => {
+        const isSelected = selectedFuseCharIds.includes(c.id);
+        const isEquipped = userData.equippedCharId === c.id;
+
+        const div = document.createElement('div');
+        div.className = 'item-box';
+        div.style.border = isSelected ? '2px solid #38bdf8' : '1px solid #334155';
+        div.innerHTML = `
+          <h3 class="rarity-${(c.rarity || 'r').toLowerCase()}">[${c.rarity || 'R'}] ${getCharFullName(c)}</h3>
+          <p>⭐ Lv.${c.level || 1} | ⚔️ 威力: ${c.power}</p>
+          ${isEquipped ? '<p style="color:#facc15; font-size:10px;">装備中</p>' : ''}
+          <button class="btn" style="background:${isSelected ? '#475569' : '#2563eb'}; margin-top:4px;" ${isSelected ? 'disabled' : ''} onclick="selectFuseChar('${c.id}')">${isSelected ? '選択中' : '素材にセット'}</button>
+        `;
+        invList.appendChild(div);
+      });
+    }
+
+    function selectFuseChar(charId) {
+      const emptyIdx = selectedFuseCharIds.indexOf(null);
+      if (emptyIdx === -1) return alert('素材は最大4体までしか選択できません。');
+      selectedFuseCharIds[emptyIdx] = charId;
+      renderFuseUI();
+    }
+
+    function deselectFuseChar(index) {
+      selectedFuseCharIds[index] = null;
+      renderFuseUI();
+    }
+
+    function executeFuse() {
+      if (selectedFuseCharIds.includes(null)) {
+        return alert('ヒューズには4体のキャラが必要です！');
+      }
+
+      const chars = selectedFuseCharIds.map(id => userData.inventory.find(c => c.id === id));
+      if (chars.some(c => !c)) return alert('選択されたキャラが無効です。');
+
+      // 装備中のキャラが含まれていたら解除
+      selectedFuseCharIds.forEach(id => {
+        if (userData.equippedCharId === id) userData.equippedCharId = null;
+      });
+
+      // カスタムクラフトレシピとのマッチングチェック
+      let matchedRecipe = null;
+      for (const recipe of customFuseRecipes) {
+        if (recipe.maxUses > 0 && recipe.usedCount >= recipe.maxUses) continue;
+        let availableInput = [...chars];
+        let allMatched = true;
+
+        for (const req of recipe.reqs) {
+          const matchIdx = availableInput.findIndex(c => {
+            const fullName = `${c.rarity} ${c.name}`;
+            return fullName.includes(req) || c.name.includes(req) || c.rarity.includes(req);
+          });
+          if (matchIdx !== -1) {
+            availableInput.splice(matchIdx, 1);
+          } else {
+            allMatched = false; break;
+          }
+        }
+        if (allMatched) { matchedRecipe = recipe; break; }
+      }
+
+      // 素材消費
+      selectedFuseCharIds.forEach(id => {
+        const idx = userData.inventory.findIndex(c => c.id === id);
+        if (idx !== -1) userData.inventory.splice(idx, 1);
+      });
+      selectedFuseCharIds = [null, null, null, null];
+
+      const fuseMult = fuseLuckState.active ? fuseLuckState.multiplier : 1;
+
+      if (matchedRecipe) {
+        const successRate = Math.min(100, matchedRecipe.chance * fuseMult);
+        if (Math.random() * 100 < successRate) {
+          matchedRecipe.usedCount = (matchedRecipe.usedCount || 0) + 1;
+          const newChar = {
+            id: 'fuse_custom_' + Date.now(),
+            name: matchedRecipe.outChar.name,
+            rarity: matchedRecipe.outChar.rarity,
+            level: 1,
+            power: matchedRecipe.outChar.power
+          };
+          userData.inventory.push(newChar);
+          updateUI(); saveToCloud(); broadcastMyState(); sendPeerMessage({ type: 'sync_fuse_recipes', recipes: customFuseRecipes });
+          alert(`🎉 ヒューズ大成功！【${newChar.rarity}】${newChar.name} が誕生しました！`);
+          log(`🌀 カスタムヒューズ成功: 【${newChar.rarity}】${newChar.name}`);
+        } else {
+          updateUI(); saveToCloud(); broadcastMyState();
+          alert('💥 ヒューズに失敗しました…素材キャラは消滅しました。');
+          log('🌀 カスタムヒューズ失敗');
+        }
+      } else {
+        // 通常の動的ヒューズ計算 (レア度スコア依存)
+        const rarityWeights = { 'SUPREME': 100, 'GOD': 50, 'EX': 30, 'LR': 25, 'SSS': 20, 'UR': 15, 'SSR': 10, 'SS': 8, 'SR': 5, 'S': 4, 'R': 2, 'A': 1, 'B': 1 };
+        let totalScore = chars.reduce((sum, c) => sum + (rarityWeights[c.rarity] || 1), 0);
+
+        // 基本成功率 (40%〜)
+        let successChance = Math.min(100, (40 + totalScore) * fuseMult);
+
+        if (Math.random() * 100 < successChance) {
+          let outRarity = 'SR';
+          let outPower = Math.floor(totalScore * 50) + 500;
+
+          if (totalScore >= 150) { outRarity = 'SUPREME'; outPower += 50000; }
+          else if (totalScore >= 80) { outRarity = 'GOD'; outPower += 20000; }
+          else if (totalScore >= 40) { outRarity = 'UR'; outPower += 5000; }
+          else if (totalScore >= 20) { outRarity = 'SSR'; outPower += 2000; }
+
+          const newChar = {
+            id: 'fuse_gen_' + Date.now(),
+            name: `🌀 融合精霊・キメラ (Score:${totalScore})`,
+            rarity: outRarity,
+            level: 1,
+            power: outPower
+          };
+          userData.inventory.push(newChar);
+          updateUI(); saveToCloud(); broadcastMyState();
+          alert(`🎉 ヒューズ成功！【${newChar.rarity}】${newChar.name} (威力:${outPower}) が誕生しました！`);
+          log(`🌀 ヒューズ成功: 【${newChar.rarity}】${newChar.name}`);
+        } else {
+          updateUI(); saveToCloud(); broadcastMyState();
+          alert('💥 ヒューズに失敗しました…素材キャラは消滅しました。');
+          log('🌀 ヒューズ失敗');
+        }
+      }
+      closeModal('fuse-modal');
+    }
+
+    function adminStartFuseLuckEvent() {
+      const mult = parseInt(document.getElementById('admin-fuse-luck-mult').value) || 1;
+      const dur = parseInt(document.getElementById('admin-fuse-luck-dur').value) || 5;
+
+      fuseLuckState = { active: true, multiplier: mult, endTime: Date.now() + (dur * 60 * 1000) };
+      broadcastBroadcast(`🌀【ヒューズイベント】ヒューズ確率 ${mult}倍 イベントが発生しました！(${dur}分間)`);
+      sendPeerMessage({ type: 'sync_fuse_luck', state: fuseLuckState });
+      log(`🌀 管理者によりヒューズラック ${mult}倍 が発動しました。`);
+    }
+
+    function adminPublishFuseRecipe() {
+      const reqs = [
+        document.getElementById('admin-fc-req1').value.trim(),
+        document.getElementById('admin-fc-req2').value.trim(),
+        document.getElementById('admin-fc-req3').value.trim(),
+        document.getElementById('admin-fc-req4').value.trim()
+      ].filter(r => r !== "");
+
+      const outName = document.getElementById('admin-fc-out-name').value.trim() || "管理者作成キメラ";
+      const outRarity = document.getElementById('admin-fc-out-rarity').value.trim() || "UR";
+      const outPower = parseInt(document.getElementById('admin-fc-out-power').value) || 10000;
+      const chance = parseInt(document.getElementById('admin-fc-chance').value) || 100;
+      const maxUses = parseInt(document.getElementById('admin-fc-maxuses').value) || 0;
+
+      if (reqs.length === 0) return alert('少なくとも1つ以上の素材条件を入力してください。');
+
+      const newRecipe = {
+        id: 'recipe_' + Date.now(),
+        reqs: reqs,
+        outChar: { name: outName, rarity: outRarity, power: outPower },
+        chance: chance,
+        maxUses: maxUses,
+        usedCount: 0
+      };
+
+      customFuseRecipes.push(newRecipe);
+      sendPeerMessage({ type: 'sync_fuse_recipes', recipes: customFuseRecipes });
+      broadcastBroadcast(`🛠️ 新しいヒューズクラフトレシピ「${outName}」が公開されました！`);
+      log(`🛠️ ヒューズクラフト「${outName}」を公開・反映しました！`);
+    }
+
+    function renderInventory() {
+      const list = document.getElementById('inventory-list');
+      list.innerHTML = '';
+
+      if (userData.ownedSkins && userData.ownedSkins.length > 0) {
+        const skinBox = document.createElement('div');
+        skinBox.className = 'item-box';
+        skinBox.style.gridColumn = '1 / -1';
+        skinBox.style.background = '#1e1b4b';
+        skinBox.style.border = '2px solid #ec4899';
+        
+        let skinOptions = `<option value="">スキンOFF (標準)</option>`;
+        userData.ownedSkins.forEach(sId => {
+          const skinObj = SKIN_LIST.find(s => s.id === sId);
+          if (skinObj) {
+            skinOptions += `<option value="${skinObj.id}" ${userData.activeSkinId === skinObj.id ? 'selected' : ''}>${skinObj.name}</option>`;
+          }
+        });
+
+        skinBox.innerHTML = `
+          <h3 style="color:#ec4899;">🎨 キャラスキン設定</h3>
+          <p style="font-size:12px; margin:4px 0;">適用するスキンを選択（オンオフ対応）</p>
+          <select id="skin-select-dropdown" onchange="toggleSkin(this.value)" style="margin-top:4px;">
+            ${skinOptions}
+          </select>
+        `;
+        list.appendChild(skinBox);
+      }
+
+      userData.inventory.forEach(c => {
+        const isEquipped = userData.equippedCharId === c.id;
+        const is1of1 = checkIs1of1(c);
+
+        const div = document.createElement('div');
+        div.className = 'item-box';
+        div.style.border = isEquipped ? '2px solid #facc15' : '1px solid #334155';
+
+        const fullNameStr = getCharFullName(c);
+        const mutClass = c.mutation ? `mut-${c.mutation}` : '';
+
+        div.innerHTML = `
+          ${is1of1 ? '<div style="color:#facc15; font-weight:bold; font-size:12px;">👑 1OF1 (世界唯一)</div>' : ''}
+          <h3 class="rarity-${(c.rarity || 'r').toLowerCase()} ${mutClass}">[${c.rarity || 'R'}] ${fullNameStr}</h3>
+          <p>⭐ Lv.${c.level || 1} | ⚔️ 威力: ${c.power}</p>
+          <button class="btn" style="background:${isEquipped ? '#10b981' : '#2563eb'};" onclick="equipCharacter('${c.id}')">${isEquipped ? '✅ 装備中' : '🛡️ 装備する'}</button>
+          <button class="btn" onclick="upgradeChar('${c.id}')">強化 (${(c.level || 1) * 150} Co)</button>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function renderIndexModal() {
+      const list = document.getElementById('index-list');
+      if (!list) return;
+      list.innerHTML = '';
+
+      recalculateGlobalIndex();
+
+      const keys = Object.keys(globalCharIndex);
+      if (keys.length === 0) {
+        list.innerHTML = '<p style="color:#94a3b8; grid-column:1/-1;">オンラインプレイヤーのキャラ情報が集計されていません。</p>';
+        return;
+      }
+
+      keys.sort((a,b) => globalCharIndex[a] - globalCharIndex[b]).forEach(charName => {
+        const count = globalCharIndex[charName];
+        const div = document.createElement('div');
+        div.className = 'item-box';
+        div.style.border = count === 1 ? '2px solid #facc15' : '1px solid #334155';
+        div.innerHTML = `
+          ${count === 1 ? '<div style="color:#facc15; font-size:11px; font-weight:bold;">👑 1OF1 (世界に1体)</div>' : ''}
+          <h3 style="font-size:13px;">${charName}</h3>
+          <p style="color:#38bdf8; font-weight:bold; margin-top:4px;">世界所有数: ${count}体</p>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function recalculateGlobalIndex() {
+      const counts = {};
+      // 自分の所持品を集計
+      userData.inventory.forEach(c => {
+        const name = getCharFullName(c);
+        counts[name] = (counts[name] || 0) + 1;
+      });
+      // 他プレイヤーの所持品を集計
+      Object.values(remotePlayers).forEach(p => {
+        if (p.inventory) {
+          p.inventory.forEach(c => {
+            const name = getCharFullName(c);
+            counts[name] = (counts[name] || 0) + 1;
+          });
+        }
+      });
+      globalCharIndex = counts;
+    }
+
+    function toggleSkin(skinId) {
+      userData.activeSkinId = skinId || null;
+      saveToCloud();
+      broadcastMyState();
+      log(skinId ? `🎨 スキンを適用しました！` : `🎨 スキンをOFFにしました。`);
+    }
+
+    function renderSkinShop() {
+      const list = document.getElementById('skin-shop-list');
+      if (!list) return;
+      list.innerHTML = '';
+
+      SKIN_LIST.forEach(s => {
+        const isOwned = userData.ownedSkins && userData.ownedSkins.includes(s.id);
+        const div = document.createElement('div');
+        div.className = 'item-box';
+        div.style.border = '1px solid #ec4899';
+        div.innerHTML = `
+          <h3 style="color:${s.color};">${s.name}</h3>
+          <p style="font-size:11px; color:#cbd5e1;">対象: ${s.targetName}</p>
+          <p style="color:#facc15; font-weight:bold; margin-top:4px;">💰 ${s.cost.toLocaleString()} Co</p>
+          ${isOwned 
+            ? '<button class="btn" style="background:#475569; cursor:default;" disabled>購入済み</button>' 
+            : `<button class="btn btn-skin" onclick="buySkin('${s.id}')">購入する</button>`}
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function buySkin(skinId) {
+      const skinObj = SKIN_LIST.find(s => s.id === skinId);
+      if (!skinObj) return;
+      if (userData.coins < skinObj.cost) return alert('コインが足りません！');
+
+      userData.coins -= skinObj.cost;
+      if (!userData.ownedSkins) userData.ownedSkins = [];
+      userData.ownedSkins.push(skinId);
+      userData.activeSkinId = skinId;
+
+      updateUI();
+      saveToCloud();
+      broadcastMyState();
+      log(`🎨 スキン「${skinObj.name}」を購入し、適用しました！`);
+    }
+
+    function calculateSellPrice(char) {
+      const rarityPrices = { 'SUPREME': 50000, 'GOD': 10000, 'EX': 5000, 'LR': 3000, 'SSS': 2000, 'UR': 1000, 'SSR': 500, 'SS': 300, 'SR': 200, 'S': 100, 'R': 50, 'A': 40, 'B': 30 };
+      const base = rarityPrices[char.rarity] || 50;
+      const mutMult = char.mutation ? (MUTATION_TYPES[char.mutation].mult) : 1;
+      return (base + (((char.level || 1) - 1) * 20)) * mutMult;
+    }
+
+    function renderSellShop() {
+      const list = document.getElementById('sell-shop-list');
+      if (!list) return;
+      list.innerHTML = '';
+
+      if (userData.inventory.length === 0) {
+        list.innerHTML = '<p style="color:#94a3b8; grid-column: 1/-1;">所持キャラがいません。</p>';
+        return;
+      }
+
+      userData.inventory.forEach(c => {
+        const isEquipped = userData.equippedCharId === c.id;
+        const sellPrice = calculateSellPrice(c);
+
+        const div = document.createElement('div');
+        div.className = 'item-box';
+        div.style.border = isEquipped ? '2px solid #64748b' : '1px solid #eab308';
+        div.innerHTML = `
+          <h3 class="rarity-${(c.rarity || 'r').toLowerCase()}">[${c.rarity || 'R'}] ${getCharFullName(c)}</h3>
+          <p>⭐ Lv.${c.level || 1} | ⚔️ 威力: ${c.power}</p>
+          <p style="color:#facc15; font-weight:bold; margin-top:4px;">💰 売却額: ${sellPrice.toLocaleString()} Co</p>
+          ${isEquipped 
+            ? '<button class="btn" style="background:#475569; cursor:not-allowed;" disabled>装備中のため売却不可</button>' 
+            : `<button class="btn btn-sell" onclick="sellCharacter('${c.id}')">売却する</button>`}
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function sellCharacter(id) {
+      const index = userData.inventory.findIndex(c => c.id === id);
+      if (index === -1) return;
+
+      const char = userData.inventory[index];
+      if (userData.equippedCharId === char.id) return alert('装備中のキャラは売却できません。');
+
+      const sellPrice = calculateSellPrice(char);
+      if (confirm(`キャラ「[${char.rarity}] ${getCharFullName(char)}」を ${sellPrice.toLocaleString()} Co で売却しますか？`)) {
+        userData.coins += sellPrice;
+        userData.inventory.splice(index, 1);
+        updateUI();
+        saveToCloud();
+        broadcastMyState();
+        log(`💰 「[${char.rarity}] ${getCharFullName(char)}」を売却しました。`);
+      }
+    }
+
+    function equipCharacter(id) {
+      userData.equippedCharId = userData.equippedCharId === id ? null : id;
+      updateUI(); saveToCloud(); broadcastMyState();
+    }
+
+    function upgradeStat(s) {
+      const cost = (userData.stats[s] || 1) * 100;
+      if (userData.coins >= cost) { userData.coins -= cost; userData.stats[s]++; updateUI(); saveToCloud(); log('⚡ 強化完了！'); }
+    }
+
+    function upgradeChar(id) {
+      const char = userData.inventory.find(c => c.id === id);
+      if (char) {
+        const cost = (char.level || 1) * 150;
+        if (userData.coins >= cost) { userData.coins -= cost; char.level = (char.level || 1) + 1; char.power += 15; updateUI(); saveToCloud(); log(`✨ レベルアップ！`); }
+      }
+    }
+
+    // --- 管理者機能: サーバー強制送還 ---
+    function adminSummonPlayer() {
+      const name = document.getElementById('admin-tp-username').value.trim();
+      if (!name) return alert('プレイヤー名を入力してください。');
+
+      let targetPeerId = null;
+      Object.values(remotePlayers).forEach(p => {
+        if (p.username === name) targetPeerId = p.peerId;
+      });
+
+      if (targetPeerId && connections[targetPeerId]) {
+        connections[targetPeerId].send({
+          type: 'force_server_summon',
+          hostPeerId: myPeerId,
+          targetX: player.x,
+          targetY: player.y
+        });
+        log(`🌀 「${name}」を自分のサーバー (${myPeerId}) へ強制送還・テレポートさせました。`);
+        document.getElementById('admin-tp-username').value = '';
+      } else {
+        alert('指定された名前のプレイヤーがオンライン上に見つかりません。');
+      }
+    }
+
+    function adminStartMutationEvent() {
+      const type = document.getElementById('admin-mutation-select').value;
+      activeMutationEvent = { type: type, endTime: Date.now() + (2 * 60 * 1000) };
+      broadcastBroadcast(`✨【変異イベント】管理者により「${type}」変異イベントが緊急開催されました！(2分間)`);
+      sendPeerMessage({ type: 'sync_mutation_event', eventState: activeMutationEvent });
+      log(`✨ 変異イベント「${type}」を開始しました。`);
+    }
+
+    function adminApplyMutationToChar() {
+      const charId = document.getElementById('admin-my-char-select').value;
+      const mutType = document.getElementById('admin-give-mut-type').value;
+
+      const char = userData.inventory.find(c => c.id === charId);
+      if (!char) return alert('対象のキャラが見つかりません。');
+
+      char.mutation = mutType;
+      const mutObj = MUTATION_TYPES[mutType];
+      char.power = Math.floor(char.power * mutObj.mult);
+
+      updateUI(); saveToCloud(); broadcastMyState();
+      log(`✨ キャラ「${char.name}」に変異「${mutType}」を付与しました！(威力×${mutObj.mult})`);
+    }
+
+    function adminSetBossLuck() {
+      const val = parseInt(document.getElementById('admin-boss-luck-input').value) || 1;
+      bossLuckMultiplier = Math.min(100, Math.max(1, val));
+      log(`👹 ボスラックを ${bossLuckMultiplier}倍 に設定しました。`);
+    }
+
+    function adminGiveBadge() {
+      const name = document.getElementById('admin-badge-username').value.trim();
+      if (!name) return alert('プレイヤー名を入力してください。');
+      badgedUsers[name] = true;
+      if (userData.username === name) userData.hasBadge = true;
+      sendPeerMessage({ type: 'sync_badges', badgedUsers: badgedUsers });
+      document.getElementById('admin-badge-username').value = '';
+      saveToCloud(); broadcastMyState();
+      log(`☑️ 「${name}」に認証マークを付与しました！`);
+    }
+
+    function adminGiveSelfBadge() {
+      userData.hasBadge = true;
+      badgedUsers[userData.username] = true;
+      sendPeerMessage({ type: 'sync_badges', badgedUsers: badgedUsers });
+      saveToCloud(); broadcastMyState();
+      log(`☑️ 自分に認証マークを付与しました！`);
+    }
+
+    function adminStartCountdown() {
+      const title = document.getElementById('admin-cd-title').value.trim() || 'カウントダウン';
+      const m = parseInt(document.getElementById('admin-cd-min').value) || 0;
+      const s = parseInt(document.getElementById('admin-cd-sec').value) || 0;
+      const totalSec = (m * 60) + s;
+      if (totalSec <= 0) return alert('1秒以上の時間を設定してください。');
+
+      activeCountdown = { title: title, endTime: Date.now() + (totalSec * 1000) };
+      sendPeerMessage({ type: 'sync_countdown', cdState: activeCountdown });
+      renderCountdownUI(); closeModal('admin-modal');
+      log(`⏳ 全体カウントダウン「${title}」を開始しました。`);
+    }
+
+    function adminStopCountdown() {
+      activeCountdown = null;
+      sendPeerMessage({ type: 'sync_countdown', cdState: null });
+      renderCountdownUI();
+      log('⏳ カウントダウンを停止しました。');
+    }
+
+    function renderCountdownUI() {
+      const banner = document.getElementById('countdown-banner');
+      if (!activeCountdown || Date.now() >= activeCountdown.endTime) {
+        banner.style.display = 'none';
+        if (countdownInterval) clearInterval(countdownInterval);
+        return;
+      }
+      banner.style.display = 'block';
+      document.getElementById('countdown-title-display').innerText = `⏳ ${activeCountdown.title}`;
+
+      const updateTimer = () => {
+        if (!activeCountdown) return;
+        const remain = Math.max(0, Math.floor((activeCountdown.endTime - Date.now()) / 1000));
+        document.getElementById('countdown-timer-display').innerText = `${Math.floor(remain / 60).toString().padStart(2, '0')}:${(remain % 60).toString().padStart(2, '0')}`;
+        if (remain <= 0) {
+          clearInterval(countdownInterval);
+          setTimeout(() => { banner.style.display = 'none'; activeCountdown = null; }, 3000);
+        }
+      };
+      updateTimer();
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(updateTimer, 1000);
+    }
+
+    function adminStartLuckEvent() {
+      const mult = parseInt(document.getElementById('admin-luck-multiplier').value) || 2;
+      const durationMin = parseInt(document.getElementById('admin-luck-duration').value) || 0;
+      const endTime = durationMin > 0 ? Date.now() + (durationMin * 60 * 1000) : 0;
+
+      luckEventState = { active: true, multiplier: mult, endTime: endTime };
+      updateUI();
+      broadcastBroadcast(`🍀【ガチャイベント】「${mult}倍ラックイベント」をスタートしました！`);
+      sendPeerMessage({ type: 'sync_luck_event', eventState: luckEventState });
+      log(`👑 ${mult}倍ラックイベントを開始しました。`);
+    }
+
+    function adminStopLuckEvent() {
+      luckEventState = { active: false, multiplier: 1, endTime: 0 };
+      updateUI();
+      broadcastBroadcast("⛔ ラックイベントが終了しました。");
+      sendPeerMessage({ type: 'sync_luck_event', eventState: luckEventState });
+      log('👑 ラックイベントを終了しました。');
+    }
+
+    function adminCreatePoll() {
+      const qText = document.getElementById('admin-poll-question').value.trim();
+      const options = [
+        document.getElementById('admin-poll-opt1').value.trim(),
+        document.getElementById('admin-poll-opt2').value.trim(),
+        document.getElementById('admin-poll-opt3').value.trim(),
+        document.getElementById('admin-poll-opt4').value.trim()
+      ].filter(opt => opt !== "");
+      const durationSec = parseInt(document.getElementById('admin-poll-time').value) || 30;
+
+      if (!qText || options.length < 2) return alert('質問と少なくとも2つの回答選択肢を入力してください。');
+
+      activePoll = { id: 'poll_' + Date.now(), question: qText, options: options.map(opt => ({ text: opt, votes: 0 })), endTime: Date.now() + (durationSec * 1000), votedUsers: [] };
+      sendPeerMessage({ type: 'start_poll', poll: activePoll });
+      renderPollUI(); closeModal('admin-modal');
+      log(`📡 アンケート「${qText}」を配信しました！`);
+    }
+
+    function renderPollUI() {
+      const banner = document.getElementById('poll-banner');
+      if (!activePoll || Date.now() >= activePoll.endTime) {
+        banner.style.display = 'none';
+        if (pollTimerInterval) clearInterval(pollTimerInterval);
+        return;
+      }
+
+      banner.style.display = 'block';
+      document.getElementById('poll-question-text').innerText = `📊 ${activePoll.question}`;
+      const container = document.getElementById('poll-options-container');
+      container.innerHTML = '';
+
+      const hasVoted = activePoll.votedUsers && activePoll.votedUsers.includes(userData.username);
+
+      activePoll.options.forEach((opt, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'poll-opt-btn';
+        btn.innerHTML = `${opt.text} <span style="font-weight:bold; color:#facc15;">(${opt.votes}票)</span>`;
+        if (hasVoted) btn.disabled = true;
+        btn.onclick = () => votePollOption(idx);
+        container.appendChild(btn);
+      });
+
+      if (pollTimerInterval) clearInterval(pollTimerInterval);
+      pollTimerInterval = setInterval(() => {
+        if (!activePoll) return clearInterval(pollTimerInterval);
+        const remain = Math.max(0, Math.floor((activePoll.endTime - Date.now()) / 1000));
+        document.getElementById('poll-timer').innerText = remain.toString().padStart(2, '0');
+        if (remain <= 0) {
+          clearInterval(pollTimerInterval);
+          setTimeout(() => { banner.style.display = 'none'; activePoll = null; }, 4000);
+        }
+      }, 1000);
+    }
+
+    function votePollOption(optIndex) {
+      if (!activePoll || activePoll.votedUsers.includes(userData.username)) return;
+      activePoll.options[optIndex].votes += 1;
+      activePoll.votedUsers.push(userData.username);
+      renderPollUI();
+      sendPeerMessage({ type: 'vote_poll', pollId: activePoll.id, optIndex: optIndex, voter: userData.username });
+    }
+
+    function adminSpawnBoss() {
+      const bossIdx = parseInt(document.getElementById('admin-boss-select').value) || 0;
+      const bossData = BOSS_TYPES[bossIdx];
+
+      aiList.push({
+        x: player.x, y: player.y, level: bossData.level, atk: bossData.atk, active: true, isBoss: true, bossType: bossData, chat: `「我は${bossData.name}！」`
+      });
+
+      closeModal('admin-modal');
+      broadcastBroadcast(`⚠️【ボス出現】${bossData.name} が出現しました！`);
+      log(`👹 ${bossData.name} を召喚しました！`);
+    }
+
+    function adminGiveCharacter() {
+      const rarity = document.getElementById('admin-select-rarity').value;
+      const name = document.getElementById('admin-select-name').value || '管理者特製キャラ';
+      const power = parseInt(document.getElementById('admin-select-power').value) || 99999;
+      userData.inventory.push({ id: 'admin_' + Date.now(), name: name, rarity: rarity, level: 99, power: power });
+      updateUI(); saveToCloud(); broadcastMyState(); log(`👑 特製キャラ入手！`);
+    }
+
+    function adminAddCoins() {
+      const amt = parseInt(document.getElementById('admin-coin-input').value) || 0;
+      userData.coins = Math.max(0, userData.coins + amt);
+      updateUI(); saveToCloud(); log(`👑 コイン変更: ${amt}`);
+    }
+
+    function toggleAdminCodeInputs() {
+      const type = document.getElementById('admin-code-type').value;
+      document.getElementById('admin-code-char-inputs').style.display = type === 'char' ? 'block' : 'none';
+      document.getElementById('admin-code-coins').style.display = type === 'coins' ? 'block' : 'none';
+    }
+
+    function adminCreateCode() {
+      const codeKey = document.getElementById('admin-code-key').value.trim();
+      const maxUses = parseInt(document.getElementById('admin-code-max-uses').value) || 0;
+      const type = document.getElementById('admin-code-type').value;
+
+      if (!codeKey) return alert('コード名を入力してください');
+
+      if (type === 'coins') {
+        const coins = parseInt(document.getElementById('admin-code-coins').value) || 0;
+        activeCodes[codeKey] = { type: 'coins', coins: coins, maxUses: maxUses, usedCount: 0 };
+      } else {
+        const charName = document.getElementById('admin-code-charname').value.trim() || '限定キャラ';
+        const charRarity = document.getElementById('admin-code-charrarity').value;
+        const charPower = parseInt(document.getElementById('admin-code-charpower').value) || 1000;
+        activeCodes[codeKey] = { type: 'char', charName: charName, charRarity: charRarity, charPower: charPower, maxUses: maxUses, usedCount: 0 };
+      }
+      saveToCloud();
+      broadcastAdminCodes();
+      log(`🎉 コード「 ${codeKey} 」を作成・配布しました！`);
+      showBroadcastBanner(`🎁 新しいコード「 ${codeKey} 」を作成配布しました！`);
+    }
+
+    function adminStartLimitedGacha() {
+      adminForcedLimited = true; isLimitedGachaActive = true; updateUI();
+      broadcastBroadcast("🔥 限定ガチャが緊急開催されました！");
+    }
+
+    function adminEndLimitedGacha() {
+      adminForcedLimited = false; isLimitedGachaActive = false; updateUI();
+    }
+
+    function adminSendBroadcast() {
+      const msg = document.getElementById('admin-broadcast-msg').value.trim();
+      if (msg) {
+        broadcastBroadcast(msg);
+        document.getElementById('admin-broadcast-msg').value = '';
+      }
+    }
+
+    function broadcastBroadcast(msg) {
+      const myHasBadge = userData.hasBadge || badgedUsers[userData.username];
+      showBroadcastBanner(msg, userData.username, myHasBadge);
+      sendPeerMessage({ type: 'broadcast', msg: msg, senderName: userData.username, senderBadge: myHasBadge });
+    }
+
+    function showBroadcastBanner(msg, senderName = null, senderBadge = false) {
+      const banner = document.getElementById('broadcast-banner');
+      const textSpan = document.getElementById('broadcast-text');
+      let html = senderName ? `<span style="color:#facc15;">[${senderName}${senderBadge ? '<span class="badge-icon"></span>' : ''}]</span> ` : "";
+      html += msg;
+      textSpan.innerHTML = html;
+      banner.style.display = 'block';
+      setTimeout(() => { banner.style.display = 'none'; }, 6000);
+    }
+
+    function saveToCloud() {
+      const saveData = { ...userData, activeCodes: activeCodes, luckEventState: luckEventState, badgedUsers: badgedUsers, customFuseRecipes: customFuseRecipes, fuseLuckState: fuseLuckState };
+      localStorage.setItem('sw_save_data', JSON.stringify(saveData));
+      log('💾 セーブデータを保存しました。');
+    }
+
+    const saved = localStorage.getItem('sw_save_data');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.activeCodes) activeCodes = parsed.activeCodes;
+        if (parsed.luckEventState) luckEventState = parsed.luckEventState;
+        if (parsed.badgedUsers) badgedUsers = parsed.badgedUsers;
+        if (parsed.customFuseRecipes) customFuseRecipes = parsed.customFuseRecipes;
+        if (parsed.fuseLuckState) fuseLuckState = parsed.fuseLuckState;
+        delete parsed.activeCodes; delete parsed.luckEventState; delete parsed.badgedUsers; delete parsed.customFuseRecipes; delete parsed.fuseLuckState;
+        userData = { ...userData, ...parsed };
+      } catch(e){}
+    }
+
+    // --- オンラインマルチプレイ (PeerJS設定) ---
+    let peer = null;
+    let myPeerId = "";
+    const connections = {}; 
+    const remotePlayers = {}; 
+
+    // 全サーバー接続用シグナリング/メッシュ処理
+    const MAX_ROOMS = 20;
+
+    function initOnline() {
+      peer = new Peer({
+        config: {'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]}
+      });
+      
+      peer.on('open', id => {
+        myPeerId = id;
+        document.getElementById('my-peer-id').innerText = id;
+        log(`🌐 オンラインサーバーに接続しました (ID: ${id})`);
+        connectToLobby();
+        broadcastMyState();
+      });
+
+      peer.on('connection', conn => {
+        setupConnection(conn);
+      });
+
+      peer.on('error', err => {
+        console.error('PeerJS Error:', err);
+      });
+    }
+
+    function setupConnection(conn) {
+      conn.on('open', () => {
+        connections[conn.peer] = conn;
+        sendMyStateTo(conn);
+        conn.send({ type: 'sync_codes', codes: activeCodes });
+        conn.send({ type: 'sync_luck_event', eventState: luckEventState });
+        conn.send({ type: 'sync_fuse_luck', state: fuseLuckState });
+        conn.send({ type: 'sync_fuse_recipes', recipes: customFuseRecipes });
+        conn.send({ type: 'sync_badges', badgedUsers: badgedUsers });
+        if (activeMutationEvent) conn.send({ type: 'sync_mutation_event', eventState: activeMutationEvent });
+        if (activeCountdown) conn.send({ type: 'sync_countdown', cdState: activeCountdown });
+        if (activePoll) conn.send({ type: 'start_poll', poll: activePoll });
+      });
+
+      conn.on('data', data => {
+        handlePeerData(data, conn);
+      });
+
+      conn.on('close', () => {
+        handleDisconnect(conn.peer);
+      });
+
+      conn.on('error', () => {
+        handleDisconnect(conn.peer);
+      });
+    }
+
+    function handleDisconnect(peerId) {
+      if (remotePlayers[peerId]) {
+        remotePlayers[peerId].online = false;
+      }
+      if (connections[peerId]) delete connections[peerId];
+      renderFriendsUI();
+      updateUI();
+    }
+
+    window.addEventListener('beforeunload', () => {
+      sendPeerMessage({ type: 'player_leave', username: userData.username });
+    });
+
+    function onTabActivated() {
+      if (peer && !peer.destroyed) {
+        broadcastMyState();
+        renderFriendsUI();
+      }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        onTabActivated();
+      } else {
+        sendPeerMessage({ type: 'player_status', username: userData.username, online: false });
+      }
+    });
+    window.addEventListener('focus', onTabActivated);
+
+    function connectToLobby() {
+      for (let i = 1; i <= MAX_ROOMS; i++) {
+        let targetId = "SKILLWARS_ROOM_" + i;
+        if (myPeerId !== targetId && !connections[targetId]) {
+          let conn = peer.connect(targetId);
+          if (conn) setupConnection(conn);
+        }
+      }
+    }
+
+    function connectToPeerManual(targetIdInput = null) {
+      const input = document.getElementById('target-peer-id-input');
+      const targetId = targetIdInput || (input ? input.value.trim() : "");
+      if (!targetId) return alert('相手のオンラインIDを入力してください。');
+      if (targetId === myPeerId) return alert('自分のオンラインIDは入力できません。');
+
+      if (connections[targetId] && connections[targetId].open) return alert('既に接続されています。');
+
+      log(`📡 オンラインID「${targetId}」へ接続中...`);
+      const conn = peer.connect(targetId);
+      if (conn) setupConnection(conn);
+    }
+
+    function sendPeerMessage(msg) {
+      Object.values(connections).forEach(conn => {
+        if (conn && conn.open) conn.send(msg);
+      });
+    }
+
+    function broadcastMyState() {
+      const equippedChar = userData.inventory.find(c => c.id === userData.equippedCharId);
+      sendPeerMessage({
+        type: 'state',
+        peerId: myPeerId,
+        username: userData.username,
+        x: player.x,
+        y: player.y,
+        hasBadge: userData.hasBadge || badgedUsers[userData.username],
+        inventory: userData.inventory,
+        equippedChar: equippedChar,
+        activeSkinId: userData.activeSkinId,
+        online: true
+      });
+    }
+
+    function sendMyStateTo(conn) {
+      const equippedChar = userData.inventory.find(c => c.id === userData.equippedCharId);
+      conn.send({
+        type: 'state',
+        peerId: myPeerId,
+        username: userData.username,
+        x: player.x,
+        y: player.y,
+        hasBadge: userData.hasBadge || badgedUsers[userData.username],
+        inventory: userData.inventory,
+        equippedChar: equippedChar,
+        activeSkinId: userData.activeSkinId,
+        online: true
+      });
+    }
+
+    function broadcastAdminCodes() {
+      sendPeerMessage({ type: 'sync_codes', codes: activeCodes });
+    }
+
+    function handlePeerData(data, conn) {
+      if (!data || !data.type) return;
+
+      switch (data.type) {
+        case 'state':
+          remotePlayers[data.peerId] = {
+            peerId: data.peerId,
+            username: data.username,
+            x: data.x,
+            y: data.y,
+            hasBadge: data.hasBadge,
+            inventory: data.inventory || [],
+            equippedChar: data.equippedChar,
+            activeSkinId: data.activeSkinId,
+            online: data.online !== false,
+            lastSeen: Date.now()
+          };
+          if (data.hasBadge && data.username) badgedUsers[data.username] = true;
+          updateUI();
+          break;
+
+        case 'chat':
+          displayChatMessage(data.sender, data.msg, data.hasBadge);
+          break;
+
+        case 'broadcast':
+          showBroadcastBanner(data.msg, data.senderName, data.senderBadge);
+          log(`📢 【全体放送】${data.senderName ? data.senderName + ': ' : ''}${data.msg}`);
+          break;
+
+        case 'sync_codes':
+          if (data.codes) activeCodes = data.codes;
+          break;
+
+        case 'sync_luck_event':
+          if (data.eventState) {
+            luckEventState = data.eventState;
+            updateUI();
+          }
+          break;
+
+        case 'sync_fuse_luck':
+          if (data.state) fuseLuckState = data.state;
+          break;
+
+        case 'sync_fuse_recipes':
+          if (data.recipes) customFuseRecipes = data.recipes;
+          break;
+
+        case 'sync_badges':
+          if (data.badgedUsers) {
+            badgedUsers = data.badgedUsers;
+            if (badgedUsers[userData.username]) userData.hasBadge = true;
+            updateUI();
+          }
+          break;
+
+        case 'sync_mutation_event':
+          activeMutationEvent = data.eventState;
+          break;
+
+        case 'sync_countdown':
+          activeCountdown = data.cdState;
+          renderCountdownUI();
+          break;
+
+        case 'start_poll':
+          activePoll = data.poll;
+          renderPollUI();
+          break;
+
+        case 'vote_poll':
+          if (activePoll && activePoll.id === data.pollId) {
+            if (!activePoll.votedUsers.includes(data.voter)) {
+              activePoll.options[data.optIndex].votes += 1;
+              activePoll.votedUsers.push(data.voter);
+              renderPollUI();
+            }
+          }
+          break;
+
+        case 'force_server_summon':
+          log(`🌀 ホスト (${data.hostPeerId}) により強制召喚されました！`);
+          player.x = data.targetX || player.x;
+          player.y = data.targetY || player.y;
+          if (data.hostPeerId && !connections[data.hostPeerId]) {
+            connectToPeerManual(data.hostPeerId);
+          }
+          break;
+
+        case 'friend_request':
+          if (data.targetName === userData.username) {
+            if (!userData.friendRequests.includes(data.senderName)) {
+              userData.friendRequests.push(data.senderName);
+              saveToCloud();
+              renderFriendsUI();
+              log(`📩 ${data.senderName} からフレンド申請が届きました！`);
+            }
+          }
+          break;
+
+        case 'friend_accept':
+          if (data.targetName === userData.username) {
+            if (!userData.friends.includes(data.senderName)) {
+              userData.friends.push(data.senderName);
+              saveToCloud();
+              renderFriendsUI();
+              log(`🤝 ${data.senderName} とフレンドになりました！`);
+            }
+          }
+          break;
+
+        case 'player_leave':
+        case 'player_status':
+          if (remotePlayers[conn.peer]) {
+            remotePlayers[conn.peer].online = data.online;
+            renderFriendsUI();
+          }
+          break;
+      }
+    }
+
+    // --- チャット機能 ---
+    function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const msg = input.value.trim();
+      if (!msg) return;
+      input.value = '';
+
+      const myHasBadge = userData.hasBadge || badgedUsers[userData.username];
+      displayChatMessage(userData.username, msg, myHasBadge);
+      sendPeerMessage({ type: 'chat', sender: userData.username, msg: msg, hasBadge: myHasBadge });
+    }
+
+    function displayChatMessage(sender, msg, hasBadge) {
+      const box = document.getElementById('chat-box');
+      const p = document.createElement('div');
+      p.style.marginBottom = '3px';
+      
+      const badgeHtml = hasBadge ? '<span class="badge-icon"></span>' : '';
+      p.innerHTML = `<strong style="color:#38bdf8;">${sender}${badgeHtml}:</strong> ${escapeHtml(msg)}`;
+      box.appendChild(p);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+    }
+
+    // --- フレンド機能 ---
+    function searchAndSendFriendRequest() {
+      const input = document.getElementById('friend-search-input');
+      const name = input.value.trim();
+      if (!name) return alert('名前を入力してください');
+      if (name === userData.username) return alert('自分には送信できません');
+
+      sendPeerMessage({ type: 'friend_request', senderName: userData.username, targetName: name });
+      input.value = '';
+      log(`📩 「${name}」へフレンド申請を送信しました。`);
+    }
+
+    function acceptFriendRequest(senderName) {
+      userData.friendRequests = userData.friendRequests.filter(n => n !== senderName);
+      if (!userData.friends.includes(senderName)) userData.friends.push(senderName);
+      saveToCloud();
+      renderFriendsUI();
+      sendPeerMessage({ type: 'friend_accept', senderName: userData.username, targetName: senderName });
+      log(`🤝 「${senderName}」のフレンド申請を承認しました！`);
+    }
+
+    function renderFriendsUI() {
+      const reqList = document.getElementById('friend-requests-list');
+      const fList = document.getElementById('friends-list');
+      if (!reqList || !fList) return;
+
+      reqList.innerHTML = '';
+      if (userData.friendRequests.length === 0) {
+        reqList.innerHTML = '<p style="font-size:11px; color:#94a3b8;">新しい申請はありません</p>';
+      } else {
+        userData.friendRequests.forEach(name => {
+          const div = document.createElement('div');
+          div.style.display = 'flex'; div.style.justifyContent = 'space-between'; div.style.alignItems = 'center'; div.style.marginTop = '4px';
+          div.innerHTML = `<span>👤 ${name}</span><button class="btn btn-login" style="width:70px; padding:2px 6px; font-size:10px;" onclick="acceptFriendRequest('${name}')">承認</button>`;
+          reqList.appendChild(div);
+        });
+      }
+
+      fList.innerHTML = '';
+      if (userData.friends.length === 0) {
+        fList.innerHTML = '<p style="font-size:11px; color:#94a3b8;">フレンドはいません</p>';
+      } else {
+        userData.friends.forEach(name => {
+          let isOnline = false;
+          let remoteP = Object.values(remotePlayers).find(p => p.username === name);
+          if (remoteP && remoteP.online && (Date.now() - remoteP.lastSeen < 15000)) isOnline = true;
+
+          const div = document.createElement('div');
+          div.style.display = 'flex'; div.style.justifyContent = 'space-between'; div.style.alignItems = 'center'; div.style.marginTop = '4px';
+          div.innerHTML = `<span>👤 ${name} ${badgedUsers[name] ? '<span class="badge-icon"></span>' : ''}</span><span style="font-size:10px; color:${isOnline ? '#10b981' : '#64748b'};">${isOnline ? '🟢 オンライン' : '🔴 オフライン'}</span>`;
+          fList.appendChild(div);
+        });
+      }
+    }
+
+    // --- ゲームキャンバス＆AIループ ---
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    let player = { x: 2500, y: 2500, radius: 20, speed: 5 };
+    let keys = {};
+
+    window.addEventListener('keydown', e => { keys[e.key] = true; });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    let aiList = [];
+    function spawnRandomAI() {
+      if (aiList.length >= 15) return;
+      const isBoss = Math.random() < (0.1 * bossLuckMultiplier);
+      if (isBoss) {
+        const b = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
+        aiList.push({
+          x: player.x + (Math.random() * 800 - 400),
+          y: player.y + (Math.random() * 800 - 400),
+          level: b.level,
+          atk: b.atk,
+          active: true,
+          isBoss: true,
+          bossType: b,
+          chat: `「我は${b.name}！」`
+        });
+      } else {
+        const pLvl = Math.floor(Math.random() * 50) + 1;
+        aiList.push({
+          x: player.x + (Math.random() * 800 - 400),
+          y: player.y + (Math.random() * 800 - 400),
+          level: pLvl,
+          atk: pLvl * 20,
+          active: true,
+          isBoss: false,
+          chat: "「勝負だ！」"
+        });
+      }
+    }
+    setInterval(spawnRandomAI, 4000);
+
+    let activeAIEncounter = null;
+
+    function gameLoop() {
+      let moveSpeed = player.speed + (userData.stats.speedLevel * 0.5);
+      if (keys['ArrowUp'] || keys['w'] || keys['W']) player.y = Math.max(0, player.y - moveSpeed);
+      if (keys['ArrowDown'] || keys['s'] || keys['S']) player.y = Math.min(FIELD_LIMIT, player.y + moveSpeed);
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.x = Math.max(0, player.x - moveSpeed);
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) player.x = Math.min(FIELD_LIMIT, player.x + moveSpeed);
+
+      if (Math.random() < 0.05) broadcastMyState();
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const cameraX = player.x - canvas.width / 2;
+      const cameraY = player.y - canvas.height / 2;
+
+      // グリッド描画
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      const gridSize = 100;
+      const startX = Math.floor(cameraX / gridSize) * gridSize;
+      const startY = Math.floor(cameraY / gridSize) * gridSize;
+
+      for (let x = startX; x < cameraX + canvas.width; x += gridSize) {
+        ctx.beginPath(); ctx.moveTo(x - cameraX, 0); ctx.lineTo(x - cameraX, canvas.height); ctx.stroke();
+      }
+      for (let y = startY; y < cameraY + canvas.height; y += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, y - cameraY); ctx.lineTo(canvas.width, y - cameraY); ctx.stroke();
+      }
+
+      // 他のオンラインプレイヤー描画
+      Object.values(remotePlayers).forEach(p => {
+        if (!p.online) return;
+        const rx = p.x - cameraX;
+        const ry = p.y - cameraY;
+
+        ctx.beginPath();
+        ctx.arc(rx, ry, 20, 0, Math.PI * 2);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fill();
+        ctx.strokeStyle = p.hasBadge ? '#facc15' : '#0284c7';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = '#white';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${p.username}${p.hasBadge ? ' ✓' : ''}`, rx, ry - 28);
+
+        if (p.equippedChar) {
+          ctx.fillStyle = '#facc15';
+          ctx.font = '10px sans-serif';
+          ctx.fillText(`[${p.equippedChar.rarity}] ${getCharFullName(p.equippedChar)}`, rx, ry - 40);
+        }
+      });
+
+      // AI/ボス 描画＆接触チェック
+      aiList.forEach(ai => {
+        if (!ai.active) return;
+        const ax = ai.x - cameraX;
+        const ay = ai.y - cameraY;
+
+        ctx.beginPath();
+        ctx.arc(ax, ay, ai.isBoss ? 30 : 18, 0, Math.PI * 2);
+        ctx.fillStyle = ai.isBoss ? (ai.bossType.color || '#ef4444') : '#f43f5e';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${ai.isBoss ? ai.bossType.name : 'AI Lv.' + ai.level}`, ax, ay - (ai.isBoss ? 38 : 24));
+
+        // 接触判定
+        const dist = Math.hypot(player.x - ai.x, player.y - ai.y);
+        if (dist < (ai.isBoss ? 50 : 38) && !activeAIEncounter) {
+          activeAIEncounter = ai;
+          triggerAIEncounter(ai);
+        }
+      });
+
+      // プレイヤー自機描画
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, player.radius, 0, Math.PI * 2);
+      
+      let pColor = '#2563eb';
+      if (userData.activeSkinId) {
+        const sObj = SKIN_LIST.find(s => s.id === userData.activeSkinId);
+        if (sObj) pColor = sObj.color;
+      }
+      ctx.fillStyle = pColor;
+      ctx.fill();
+      ctx.strokeStyle = (userData.hasBadge || badgedUsers[userData.username]) ? '#facc15' : '#38bdf8';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      const myBadgeStr = (userData.hasBadge || badgedUsers[userData.username]) ? ' ✓' : '';
+      ctx.fillText(`${userData.username}${myBadgeStr}`, canvas.width / 2, canvas.height / 2 - 28);
+
+      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
+      if (equipped) {
+        ctx.fillStyle = '#facc15';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(`[${equipped.rarity}] ${getCharFullName(equipped)}`, canvas.width / 2, canvas.height / 2 - 40);
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function triggerAIEncounter(ai) {
+      const nameDisp = document.getElementById('ai-name-display');
+      const abilityDisp = document.getElementById('boss-ability-display');
+      const chatDisp = document.getElementById('ai-chat-display');
+
+      if (ai.isBoss) {
+        nameDisp.innerText = `⚠️ ボス出現：${ai.bossType.name}`;
+        abilityDisp.innerText = `特殊アビリティ: ${ai.bossType.ability}`;
+      } else {
+        nameDisp.innerText = `🤖 敵AI (Lv.${ai.level}) に遭遇！`;
+        abilityDisp.innerText = '';
+      }
+      chatDisp.innerText = ai.chat || "「勝負だ！」";
+      openModal('ai-encounter-modal');
+    }
+
+    function leaveAI() {
+      if (activeAIEncounter) {
+        activeAIEncounter.x += (Math.random() < 0.5 ? 200 : -200);
+        activeAIEncounter.y += (Math.random() < 0.5 ? 200 : -200);
+      }
+      activeAIEncounter = null;
+      closeModal('ai-encounter-modal');
+      log('🏃 戦闘を回避して逃げ出しました。');
+    }
+
+    function fightAI() {
+      if (!activeAIEncounter) return;
+      const ai = activeAIEncounter;
+      closeModal('ai-encounter-modal');
+      openModal('battle-anim-modal');
+
+      const pUnit = document.getElementById('player-unit');
+      const aiUnit = document.getElementById('ai-unit');
+      const slash = document.getElementById('slash-effect');
+      const statusText = document.getElementById('battle-status-text');
+
+      statusText.innerText = "⚔️ BATTLE START! ⚔️";
+      pUnit.className = "battle-unit";
+      aiUnit.className = "battle-unit";
+
+      setTimeout(() => {
+        pUnit.classList.add('player-attack');
+        slash.classList.add('active');
+      }, 300);
+
+      setTimeout(() => {
+        slash.classList.remove('active');
+        aiUnit.classList.add('ai-attack');
+      }, 900);
+
+      setTimeout(() => {
+        const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
+        let playerPower = (userData.stats.atkLevel * 50) + (equipped ? equipped.power : 100);
+
+        if (equipped && equipped.mutation) {
+          const mutObj = MUTATION_TYPES[equipped.mutation];
+          if (mutObj) playerPower *= mutObj.mult;
+        }
+
+        const enemyPower = ai.isBoss ? ai.atk : (ai.level * 25);
+        const win = playerPower >= enemyPower || (Math.random() * (playerPower + enemyPower) < playerPower);
+
+        if (win) {
+          statusText.innerText = "🎉 VICTORY! 🎉";
+          let rewardCoins = ai.isBoss ? (ai.level * 10) : (ai.level * 2);
+          userData.coins += rewardCoins;
+
+          if (equipped && Math.random() < 0.3) {
+            equipped.power += 10;
+          }
+
+          // 変異付与判定 (変異イベント中は4%で敵撃破時に装備キャラに変異付与)
+          if (equipped && activeMutationEvent && Math.random() < 0.04) {
+            const mutType = activeMutationEvent.type;
+            equipped.mutation = mutType;
+            equipped.power = Math.floor(equipped.power * MUTATION_TYPES[mutType].mult);
+            log(`✨ 敵撃破ボーナス！装備中の「${equipped.name}」が【${mutType}】に変異しました！`);
+          }
+
+          log(`⚔️ 勝利！ +${rewardCoins} Co 獲得！`);
+          ai.active = false;
+        } else {
+          statusText.innerText = "💥 DEFEAT... 💥";
+          log(`💥 敗北しました… (敵の威力: ${enemyPower})`);
+        }
+
+        updateUI();
+        saveToCloud();
+
+        setTimeout(() => {
+          closeModal('battle-anim-modal');
+          activeAIEncounter = null;
+        }, 1200);
+      }, 1500);
+    }
+
+    // 初期起動
+    initOnline();
+    updateUI();
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
