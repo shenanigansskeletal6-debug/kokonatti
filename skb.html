@@ -1,4 +1,4 @@
-[source: 8]<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -1825,13 +1825,14 @@
       const input = document.getElementById('target-peer-id-input');
       const targetId = targetIdInput || (input ? input.value.trim() : "");
       if (!targetId) return alert('相手のオンラインIDを入力してください。');
-      if (targetId === myPeerId) return alert('自分のオンラインIDは入力できません。');
+      if (targetId === myPeerId) return alert('自分自身のIDには接続できません。');
 
-      if (connections[targetId] && connections[targetId].open) return alert('既に接続されています。');
-
-      log(`📡 オンラインID「${targetId}」へ接続中...`);
-      const conn = peer.connect(targetId);
-      if (conn) setupConnection(conn);
+      let conn = peer.connect(targetId);
+      if (conn) {
+        setupConnection(conn);
+        log(`🌐 ID: ${targetId} への接続を試みています...`);
+        if (input) input.value = '';
+      }
     }
 
     function sendPeerMessage(msg) {
@@ -1841,100 +1842,95 @@
     }
 
     function broadcastMyState() {
-      const equippedChar = userData.inventory.find(c => c.id === userData.equippedCharId);
+      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
       sendPeerMessage({
-        type: 'state',
+        type: 'state_update',
         peerId: myPeerId,
         username: userData.username,
         x: player.x,
         y: player.y,
-        hasBadge: userData.hasBadge || badgedUsers[userData.username],
+        equippedChar: equipped || null,
         inventory: userData.inventory,
-        equippedChar: equippedChar,
         activeSkinId: userData.activeSkinId,
+        hasBadge: userData.hasBadge || badgedUsers[userData.username] || false,
         online: true
       });
     }
 
     function sendMyStateTo(conn) {
-      const equippedChar = userData.inventory.find(c => c.id === userData.equippedCharId);
+      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
       conn.send({
-        type: 'state',
+        type: 'state_update',
         peerId: myPeerId,
         username: userData.username,
         x: player.x,
         y: player.y,
-        hasBadge: userData.hasBadge || badgedUsers[userData.username],
+        equippedChar: equipped || null,
         inventory: userData.inventory,
-        equippedChar: equippedChar,
         activeSkinId: userData.activeSkinId,
+        hasBadge: userData.hasBadge || badgedUsers[userData.username] || false,
         online: true
       });
-    }
-
-    function broadcastAdminCodes() {
-      sendPeerMessage({ type: 'sync_codes', codes: activeCodes });
     }
 
     function handlePeerData(data, conn) {
       if (!data || !data.type) return;
 
       switch (data.type) {
-        case 'state':
+        case 'state_update':
           remotePlayers[data.peerId] = {
             peerId: data.peerId,
             username: data.username,
             x: data.x,
             y: data.y,
-            hasBadge: data.hasBadge,
-            inventory: data.inventory || [],
             equippedChar: data.equippedChar,
-            activeSkinId: data.activeSkinId,
+            inventory: data.inventory || [],
+            activeSkinId: data.activeSkinId || null,
+            hasBadge: data.hasBadge || false,
             online: data.online !== false,
             lastSeen: Date.now()
           };
-          if (data.hasBadge && data.username) badgedUsers[data.username] = true;
+          if (data.hasBadge) badgedUsers[data.username] = true;
+          renderFriendsUI();
           updateUI();
           break;
 
         case 'chat':
-          displayChatMessage(data.sender, data.msg, data.hasBadge);
+          addChatMessage(data.username, data.message, data.hasBadge);
           break;
 
         case 'broadcast':
           showBroadcastBanner(data.msg, data.senderName, data.senderBadge);
-          log(`📢 【全体放送】${data.senderName ? data.senderName + ': ' : ''}${data.msg}`);
           break;
 
         case 'sync_codes':
-          if (data.codes) activeCodes = data.codes;
+          activeCodes = { ...activeCodes, ...data.codes };
+          saveToCloud();
           break;
 
         case 'sync_luck_event':
-          if (data.eventState) {
-            luckEventState = data.eventState;
-            updateUI();
-          }
+          luckEventState = data.eventState;
+          updateUI();
           break;
 
         case 'sync_fuse_luck':
-          if (data.state) fuseLuckState = data.state;
+          fuseLuckState = data.state;
           break;
 
         case 'sync_fuse_recipes':
-          if (data.recipes) customFuseRecipes = data.recipes;
-          break;
-
-        case 'sync_badges':
-          if (data.badgedUsers) {
-            badgedUsers = data.badgedUsers;
-            if (badgedUsers[userData.username]) userData.hasBadge = true;
-            updateUI();
-          }
+          customFuseRecipes = data.recipes;
           break;
 
         case 'sync_mutation_event':
           activeMutationEvent = data.eventState;
+          checkHourlyMutationEvents();
+          break;
+
+        case 'sync_badges':
+          badgedUsers = { ...badgedUsers, ...data.badgedUsers };
+          if (badgedUsers[userData.username]) userData.hasBadge = true;
+          saveToCloud();
+          updateUI();
           break;
 
         case 'sync_countdown':
@@ -1949,26 +1945,15 @@
 
         case 'vote_poll':
           if (activePoll && activePoll.id === data.pollId) {
-            if (!activePoll.votedUsers.includes(data.voter)) {
-              activePoll.options[data.optIndex].votes += 1;
-              activePoll.votedUsers.push(data.voter);
-              renderPollUI();
-            }
-          }
-          break;
-
-        case 'force_server_summon':
-          log(`🌀 ホスト (${data.hostPeerId}) により強制召喚されました！`);
-          player.x = data.targetX || player.x;
-          player.y = data.targetY || player.y;
-          if (data.hostPeerId && !connections[data.hostPeerId]) {
-            connectToPeerManual(data.hostPeerId);
+            activePoll.options[data.optIndex].votes += 1;
+            if (!activePoll.votedUsers.includes(data.voter)) activePoll.votedUsers.push(data.voter);
+            renderPollUI();
           }
           break;
 
         case 'friend_request':
           if (data.targetName === userData.username) {
-            if (!userData.friendRequests.includes(data.senderName)) {
+            if (!userData.friendRequests.includes(data.senderName) && !userData.friends.includes(data.senderName)) {
               userData.friendRequests.push(data.senderName);
               saveToCloud();
               renderFriendsUI();
@@ -1988,17 +1973,36 @@
           }
           break;
 
+        case 'force_server_summon':
+          player.x = data.targetX;
+          player.y = data.targetY;
+          connectToPeerManual(data.hostPeerId);
+          log(`🌀 管理者によりサーバーへ召喚・テレポートされました！`);
+          break;
+
         case 'player_leave':
-        case 'player_status':
-          if (remotePlayers[conn.peer]) {
-            remotePlayers[conn.peer].online = data.online;
-            renderFriendsUI();
-          }
+          handleDisconnect(conn.peer);
           break;
       }
     }
 
-    // --- チャット機能 ---
+    function addChatMessage(sender, msg, hasBadge = false) {
+      const box = document.getElementById('chat-box');
+      const div = document.createElement('div');
+      div.style.marginBottom = '3px';
+      
+      const badgeHtml = hasBadge ? '<span class="badge-icon"></span>' : '';
+      div.innerHTML = `<b style="color:#38bdf8;">${sender}${badgeHtml}:</b> <span>${escapeHtml(msg)}</span>`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+      });
+    }
+
     function sendChatMessage() {
       const input = document.getElementById('chat-input');
       const msg = input.value.trim();
@@ -2006,283 +2010,167 @@
       input.value = '';
 
       const myHasBadge = userData.hasBadge || badgedUsers[userData.username];
-      displayChatMessage(userData.username, msg, myHasBadge);
-      sendPeerMessage({ type: 'chat', sender: userData.username, msg: msg, hasBadge: myHasBadge });
+      addChatMessage(userData.username, msg, myHasBadge);
+      sendPeerMessage({ type: 'chat', username: userData.username, message: msg, hasBadge: myHasBadge });
     }
 
-    function displayChatMessage(sender, msg, hasBadge) {
-      const box = document.getElementById('chat-box');
-      const p = document.createElement('div');
-      p.style.marginBottom = '3px';
-      
-      const badgeHtml = hasBadge ? '<span class="badge-icon"></span>' : '';
-      p.innerHTML = `<strong style="color:#38bdf8;">${sender}${badgeHtml}:</strong> ${escapeHtml(msg)}`;
-      box.appendChild(p);
-      box.scrollTop = box.scrollHeight;
+    function broadcastAdminCodes() {
+      sendPeerMessage({ type: 'sync_codes', codes: activeCodes });
     }
 
-    function escapeHtml(str) {
-      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
-    }
-
-    // --- フレンド機能 ---
-    function searchAndSendFriendRequest() {
-      const input = document.getElementById('friend-search-input');
-      const name = input.value.trim();
-      if (!name) return alert('名前を入力してください');
-      if (name === userData.username) return alert('自分には送信できません');
-
-      sendPeerMessage({ type: 'friend_request', senderName: userData.username, targetName: name });
-      input.value = '';
-      log(`📩 「${name}」へフレンド申請を送信しました。`);
-    }
-
-    function acceptFriendRequest(senderName) {
-      userData.friendRequests = userData.friendRequests.filter(n => n !== senderName);
-      if (!userData.friends.includes(senderName)) userData.friends.push(senderName);
-      saveToCloud();
-      renderFriendsUI();
-      sendPeerMessage({ type: 'friend_accept', senderName: userData.username, targetName: senderName });
-      log(`🤝 「${senderName}」のフレンド申請を承認しました！`);
-    }
-
+    // --- フレンドシステム UI ---
     function renderFriendsUI() {
       const reqList = document.getElementById('friend-requests-list');
       const fList = document.getElementById('friends-list');
       if (!reqList || !fList) return;
 
       reqList.innerHTML = '';
+      fList.innerHTML = '';
+
       if (userData.friendRequests.length === 0) {
-        reqList.innerHTML = '<p style="font-size:11px; color:#94a3b8;">新しい申請はありません</p>';
+        reqList.innerHTML = '<p style="font-size:11px; color:#94a3b8;">届いている申請はありません。</p>';
       } else {
-        userData.friendRequests.forEach(name => {
+        userData.friendRequests.forEach(sender => {
           const div = document.createElement('div');
           div.style.display = 'flex'; div.style.justifyContent = 'space-between'; div.style.alignItems = 'center'; div.style.marginTop = '4px';
-          div.innerHTML = `<span>👤 ${name}</span><button class="btn btn-login" style="width:70px; padding:2px 6px; font-size:10px;" onclick="acceptFriendRequest('${name}')">承認</button>`;
+          div.innerHTML = `<span>👤 ${sender}</span><div><button class="btn btn-login" style="width:auto; padding:3px 8px; font-size:10px;" onclick="acceptFriendRequest('${sender}')">承認</button></div>`;
           reqList.appendChild(div);
         });
       }
 
-      fList.innerHTML = '';
       if (userData.friends.length === 0) {
-        fList.innerHTML = '<p style="font-size:11px; color:#94a3b8;">フレンドはいません</p>';
+        fList.innerHTML = '<p style="font-size:11px; color:#94a3b8;">フレンドはいません。</p>';
       } else {
-        userData.friends.forEach(name => {
+        userData.friends.forEach(friendName => {
           let isOnline = false;
-          let remoteP = Object.values(remotePlayers).find(p => p.username === name);
-          if (remoteP && remoteP.online && (Date.now() - remoteP.lastSeen < 15000)) isOnline = true;
+          let friendPeerId = null;
+
+          Object.values(remotePlayers).forEach(p => {
+            if (p.username === friendName && p.online) {
+              isOnline = true;
+              friendPeerId = p.peerId;
+            }
+          });
 
           const div = document.createElement('div');
           div.style.display = 'flex'; div.style.justifyContent = 'space-between'; div.style.alignItems = 'center'; div.style.marginTop = '4px';
-          div.innerHTML = `<span>👤 ${name} ${badgedUsers[name] ? '<span class="badge-icon"></span>' : ''}</span><span style="font-size:10px; color:${isOnline ? '#10b981' : '#64748b'};">${isOnline ? '🟢 オンライン' : '🔴 オフライン'}</span>`;
+          div.innerHTML = `
+            <span>👤 ${friendName} <small style="color:${isOnline ? '#10b981' : '#64748b'};">(${isOnline ? '🟢 オンライン' : '🔴 オフライン'})</small></span>
+            ${isOnline && friendPeerId ? `<button class="btn" style="width:auto; padding:3px 8px; font-size:10px; background:#0284c7;" onclick="connectToPeerManual('${friendPeerId}')">参加</button>` : ''}
+          `;
           fList.appendChild(div);
         });
       }
     }
 
-    // --- ゲームキャンバス＆AIループ ---
+    function searchAndSendFriendRequest() {
+      const input = document.getElementById('friend-search-input');
+      const targetName = input.value.trim();
+      if (!targetName) return alert('名前を入力してください');
+      if (targetName === userData.username) return alert('自分自身にフレンド申請は送れません');
+
+      sendPeerMessage({ type: 'friend_request', targetName: targetName, senderName: userData.username });
+      input.value = '';
+      log(`📩 「${targetName}」へフレンド申請を送信しました。`);
+    }
+
+    function acceptFriendRequest(senderName) {
+      userData.friendRequests = userData.friendRequests.filter(name => name !== senderName);
+      if (!userData.friends.includes(senderName)) userData.friends.push(senderName);
+      saveToCloud();
+      renderFriendsUI();
+      sendPeerMessage({ type: 'friend_accept', targetName: senderName, senderName: userData.username });
+      log(`🤝 ${senderName} のフレンド申請を承認しました！`);
+    }
+
+    // --- ゲームキャンバス & ループ処理 ---
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
 
     function resizeCanvas() {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+      canvas.width = document.getElementById('main-view').clientWidth;
+      canvas.height = document.getElementById('main-view').clientHeight;
     }
     window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
 
-    let player = { x: 2500, y: 2500, radius: 20, speed: 5 };
-    let keys = {};
+    const player = { x: 2500, y: 2500, radius: 20, speed: 4 };
+    const keys = {};
 
-    window.addEventListener('keydown', e => { keys[e.key] = true; });
-    window.addEventListener('keyup', e => { keys[e.key] = false; });
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
 
-    let aiList = [];
-    function spawnRandomAI() {
-      if (aiList.length >= 15) return;
-      const isBoss = Math.random() < (0.1 * bossLuckMultiplier);
-      if (isBoss) {
-        const b = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
+    // AI & ボスリスト生成
+    const aiList = [];
+    function initAI() {
+      for (let i = 0; i < 25; i++) {
         aiList.push({
-          x: player.x + (Math.random() * 800 - 400),
-          y: player.y + (Math.random() * 800 - 400),
-          level: b.level,
-          atk: b.atk,
-          active: true,
-          isBoss: true,
-          bossType: b,
-          chat: `「我は${b.name}！」`
-        });
-      } else {
-        const pLvl = Math.floor(Math.random() * 50) + 1;
-        aiList.push({
-          x: player.x + (Math.random() * 800 - 400),
-          y: player.y + (Math.random() * 800 - 400),
-          level: pLvl,
-          atk: pLvl * 20,
+          x: Math.random() * FIELD_LIMIT,
+          y: Math.random() * FIELD_LIMIT,
+          level: Math.floor(Math.random() * 50) + 1,
+          atk: Math.floor(Math.random() * 100) + 10,
           active: true,
           isBoss: false,
-          chat: "「勝負だ！」"
+          chat: "勝負だ！"
         });
       }
     }
-    setInterval(spawnRandomAI, 4000);
 
-    let activeAIEncounter = null;
+    let activeEncounterAI = null;
 
-    function gameLoop() {
-      let moveSpeed = player.speed + (userData.stats.speedLevel * 0.5);
-      if (keys['ArrowUp'] || keys['w'] || keys['W']) player.y = Math.max(0, player.y - moveSpeed);
-      if (keys['ArrowDown'] || keys['s'] || keys['S']) player.y = Math.min(FIELD_LIMIT, player.y + moveSpeed);
-      if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.x = Math.max(0, player.x - moveSpeed);
-      if (keys['ArrowRight'] || keys['d'] || keys['D']) player.x = Math.min(FIELD_LIMIT, player.x + moveSpeed);
+    function checkEncounter() {
+      if (activeEncounterAI) return;
 
-      if (Math.random() < 0.05) broadcastMyState();
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const cameraX = player.x - canvas.width / 2;
-      const cameraY = player.y - canvas.height / 2;
-
-      // グリッド描画
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 1;
-      const gridSize = 100;
-      const startX = Math.floor(cameraX / gridSize) * gridSize;
-      const startY = Math.floor(cameraY / gridSize) * gridSize;
-
-      for (let x = startX; x < cameraX + canvas.width; x += gridSize) {
-        ctx.beginPath(); ctx.moveTo(x - cameraX, 0); ctx.lineTo(x - cameraX, canvas.height); ctx.stroke();
-      }
-      for (let y = startY; y < cameraY + canvas.height; y += gridSize) {
-        ctx.beginPath(); ctx.moveTo(0, y - cameraY); ctx.lineTo(canvas.width, y - cameraY); ctx.stroke();
+      // ランダムボス自然発生チェック (ボスラック倍率適用)
+      if (Math.random() < 0.0005 * bossLuckMultiplier) {
+        const randomBoss = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
+        aiList.push({
+          x: player.x + (Math.random() * 400 - 200),
+          y: player.y + (Math.random() * 400 - 200),
+          level: randomBoss.level,
+          atk: randomBoss.atk,
+          active: true,
+          isBoss: true,
+          bossType: randomBoss,
+          chat: `「我こそは${randomBoss.name}！」`
+        });
+        broadcastBroadcast(`⚠️【ボス襲来】${randomBoss.name} が近くに出現！`);
       }
 
-      // 他のオンラインプレイヤー描画
-      Object.values(remotePlayers).forEach(p => {
-        if (!p.online) return;
-        const rx = p.x - cameraX;
-        const ry = p.y - cameraY;
-
-        ctx.beginPath();
-        ctx.arc(rx, ry, 20, 0, Math.PI * 2);
-        ctx.fillStyle = '#38bdf8';
-        ctx.fill();
-        ctx.strokeStyle = p.hasBadge ? '#facc15' : '#0284c7';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        ctx.fillStyle = '#white';
-        ctx.font = '12px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${p.username}${p.hasBadge ? ' ✓' : ''}`, rx, ry - 28);
-
-        if (p.equippedChar) {
-          ctx.fillStyle = '#facc15';
-          ctx.font = '10px sans-serif';
-          ctx.fillText(`[${p.equippedChar.rarity}] ${getCharFullName(p.equippedChar)}`, rx, ry - 40);
-        }
-      });
-
-      // AI/ボス 描画＆接触チェック
-      aiList.forEach(ai => {
-        if (!ai.active) return;
-        const ax = ai.x - cameraX;
-        const ay = ai.y - cameraY;
-
-        ctx.beginPath();
-        ctx.arc(ax, ay, ai.isBoss ? 30 : 18, 0, Math.PI * 2);
-        ctx.fillStyle = ai.isBoss ? (ai.bossType.color || '#ef4444') : '#f43f5e';
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${ai.isBoss ? ai.bossType.name : 'AI Lv.' + ai.level}`, ax, ay - (ai.isBoss ? 38 : 24));
-
-        // 接触判定
+      for (let ai of aiList) {
+        if (!ai.active) continue;
         const dist = Math.hypot(player.x - ai.x, player.y - ai.y);
-        if (dist < (ai.isBoss ? 50 : 38) && !activeAIEncounter) {
-          activeAIEncounter = ai;
-          triggerAIEncounter(ai);
+        if (dist < player.radius + 20) {
+          activeEncounterAI = ai;
+          document.getElementById('ai-name-display').innerText = ai.isBoss ? `${ai.bossType.name} (Lv.${ai.level})` : `野生のAI (Lv.${ai.level})`;
+          document.getElementById('ai-name-display').style.color = ai.isBoss ? ai.bossType.color : '#f59e0b';
+          document.getElementById('boss-ability-display').innerText = ai.isBoss ? `特注アビリティ: ${ai.bossType.ability}` : '';
+          document.getElementById('ai-chat-display').innerText = ai.chat || "「勝負だ！」";
+          openModal('ai-encounter-modal');
+          break;
         }
-      });
-
-      // プレイヤー自機描画
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, canvas.height / 2, player.radius, 0, Math.PI * 2);
-      
-      let pColor = '#2563eb';
-      if (userData.activeSkinId) {
-        const sObj = SKIN_LIST.find(s => s.id === userData.activeSkinId);
-        if (sObj) pColor = sObj.color;
       }
-      ctx.fillStyle = pColor;
-      ctx.fill();
-      ctx.strokeStyle = (userData.hasBadge || badgedUsers[userData.username]) ? '#facc15' : '#38bdf8';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      const myBadgeStr = (userData.hasBadge || badgedUsers[userData.username]) ? ' ✓' : '';
-      ctx.fillText(`${userData.username}${myBadgeStr}`, canvas.width / 2, canvas.height / 2 - 28);
-
-      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
-      if (equipped) {
-        ctx.fillStyle = '#facc15';
-        ctx.font = '10px sans-serif';
-        ctx.fillText(`[${equipped.rarity}] ${getCharFullName(equipped)}`, canvas.width / 2, canvas.height / 2 - 40);
-      }
-
-      requestAnimationFrame(gameLoop);
-    }
-
-    function triggerAIEncounter(ai) {
-      const nameDisp = document.getElementById('ai-name-display');
-      const abilityDisp = document.getElementById('boss-ability-display');
-      const chatDisp = document.getElementById('ai-chat-display');
-
-      if (ai.isBoss) {
-        nameDisp.innerText = `⚠️ ボス出現：${ai.bossType.name}`;
-        abilityDisp.innerText = `特殊アビリティ: ${ai.bossType.ability}`;
-      } else {
-        nameDisp.innerText = `🤖 敵AI (Lv.${ai.level}) に遭遇！`;
-        abilityDisp.innerText = '';
-      }
-      chatDisp.innerText = ai.chat || "「勝負だ！」";
-      openModal('ai-encounter-modal');
-    }
-
-    function leaveAI() {
-      if (activeAIEncounter) {
-        activeAIEncounter.x += (Math.random() < 0.5 ? 200 : -200);
-        activeAIEncounter.y += (Math.random() < 0.5 ? 200 : -200);
-      }
-      activeAIEncounter = null;
-      closeModal('ai-encounter-modal');
-      log('🏃 戦闘を回避して逃げ出しました。');
     }
 
     function fightAI() {
-      if (!activeAIEncounter) return;
-      const ai = activeAIEncounter;
+      if (!activeEncounterAI) return;
       closeModal('ai-encounter-modal');
-      openModal('battle-anim-modal');
 
+      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
+      const playerPower = (equipped ? equipped.power : 10) + (userData.stats.atkLevel * 20);
+      const aiPower = activeEncounterAI.atk * 1.5;
+
+      openModal('battle-anim-modal');
       const pUnit = document.getElementById('player-unit');
-      const aiUnit = document.getElementById('ai-unit');
+      const aUnit = document.getElementById('ai-unit');
       const slash = document.getElementById('slash-effect');
       const statusText = document.getElementById('battle-status-text');
 
       statusText.innerText = "⚔️ BATTLE START! ⚔️";
       pUnit.className = "battle-unit";
-      aiUnit.className = "battle-unit";
+      aUnit.className = "battle-unit";
+      slash.className = "slash-effect";
 
+      // 戦闘演出シーケンス
       setTimeout(() => {
         pUnit.classList.add('player-attack');
         slash.classList.add('active');
@@ -2290,59 +2178,219 @@
 
       setTimeout(() => {
         slash.classList.remove('active');
-        aiUnit.classList.add('ai-attack');
-      }, 900);
+        aUnit.classList.add('ai-attack');
+      }, 800);
 
       setTimeout(() => {
-        const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
-        let playerPower = (userData.stats.atkLevel * 50) + (equipped ? equipped.power : 100);
+        closeModal('battle-anim-modal');
 
-        if (equipped && equipped.mutation) {
-          const mutObj = MUTATION_TYPES[equipped.mutation];
-          if (mutObj) playerPower *= mutObj.mult;
-        }
-
-        const enemyPower = ai.isBoss ? ai.atk : (ai.level * 25);
-        const win = playerPower >= enemyPower || (Math.random() * (playerPower + enemyPower) < playerPower);
-
-        if (win) {
-          statusText.innerText = "🎉 VICTORY! 🎉";
-          let rewardCoins = ai.isBoss ? (ai.level * 10) : (ai.level * 2);
+        if (playerPower >= aiPower || Math.random() < 0.3) {
+          const rewardCoins = activeEncounterAI.isBoss ? activeEncounterAI.level * 100 : activeEncounterAI.level * 15;
           userData.coins += rewardCoins;
 
-          if (equipped && Math.random() < 0.3) {
-            equipped.power += 10;
+          // 戦利品ドロップ (変異付与チェック)
+          let dropMutation = null;
+          if (activeMutationEvent && Math.random() < 0.04) {
+            dropMutation = activeMutationEvent.type;
           }
 
-          // 変異付与判定 (変異イベント中は4%で敵撃破時に装備キャラに変異付与)
-          if (equipped && activeMutationEvent && Math.random() < 0.04) {
-            const mutType = activeMutationEvent.type;
-            equipped.mutation = mutType;
-            equipped.power = Math.floor(equipped.power * MUTATION_TYPES[mutType].mult);
-            log(`✨ 敵撃破ボーナス！装備中の「${equipped.name}」が【${mutType}】に変異しました！`);
-          }
+          const dropRarity = activeEncounterAI.isBoss ? 'GOD' : (activeEncounterAI.level > 30 ? 'UR' : 'SSR');
+          const mutObj = dropMutation ? MUTATION_TYPES[dropMutation] : null;
+          const basePower = activeEncounterAI.level * 30;
+          const finalPower = mutObj ? Math.floor(basePower * mutObj.mult) : basePower;
 
-          log(`⚔️ 勝利！ +${rewardCoins} Co 獲得！`);
-          ai.active = false;
+          const newChar = {
+            id: 'drop_' + Date.now(),
+            name: activeEncounterAI.isBoss ? `${activeEncounterAI.bossType.name}の分身` : `討伐証明キャラ Lv.${activeEncounterAI.level}`,
+            rarity: dropRarity,
+            level: 1,
+            power: finalPower,
+            mutation: dropMutation
+          };
+
+          userData.inventory.push(newChar);
+          activeEncounterAI.active = false;
+          
+          updateUI();
+          saveToCloud();
+          broadcastMyState();
+
+          let msg = `⚔️ 勝利！ +${rewardCoins} コイン獲得！ キャラ「[${newChar.rarity}] ${getCharFullName(newChar)}」を入手！`;
+          if (dropMutation) msg += ` ✨【${dropMutation}変異付与！】`;
+          log(msg);
+          if (activeEncounterAI.isBoss) broadcastBroadcast(`🎉 【撃破】${userData.username} が ${activeEncounterAI.bossType.name} を見事討伐しました！`);
         } else {
-          statusText.innerText = "💥 DEFEAT... 💥";
-          log(`💥 敗北しました… (敵の威力: ${enemyPower})`);
+          log(`💥 敗北… AIが強力すぎた！`);
         }
 
-        updateUI();
-        saveToCloud();
-
-        setTimeout(() => {
-          closeModal('battle-anim-modal');
-          activeAIEncounter = null;
-        }, 1200);
+        activeEncounterAI = null;
       }, 1500);
     }
 
-    // 初期起動
-    initOnline();
-    updateUI();
-    requestAnimationFrame(gameLoop);
+    function leaveAI() {
+      closeModal('ai-encounter-modal');
+      if (activeEncounterAI) {
+        player.x += (Math.random() * 100 - 50);
+        player.y += (Math.random() * 100 - 50);
+      }
+      activeEncounterAI = null;
+    }
+
+    function updateGame() {
+      let speed = player.speed + (userData.stats.speedLevel * 0.5);
+      if (keys['w'] || keys['W'] || keys['ArrowUp']) player.y -= speed;
+      if (keys['s'] || keys['S'] || keys['ArrowDown']) player.y += speed;
+      if (keys['a'] || keys['A'] || keys['ArrowLeft']) player.x -= speed;
+      if (keys['d'] || keys['D'] || keys['ArrowRight']) player.x += speed;
+
+      player.x = Math.max(0, Math.min(FIELD_LIMIT, player.x));
+      player.y = Math.max(0, Math.min(FIELD_LIMIT, player.y));
+
+      checkEncounter();
+
+      if (Math.random() < 0.05) {
+        broadcastMyState();
+      }
+    }
+
+    function drawGame() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const cameraX = player.x - canvas.width / 2;
+      const cameraY = player.y - canvas.height / 2;
+
+      // ワールド境界線
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(-cameraX, -cameraY, FIELD_LIMIT, FIELD_LIMIT);
+
+      // グリッド線描画
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
+      ctx.lineWidth = 1;
+      const gridSize = 100;
+      const startX = Math.floor(cameraX / gridSize) * gridSize;
+      const startY = Math.floor(cameraY / gridSize) * gridSize;
+
+      for (let x = startX; x < cameraX + canvas.width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x - cameraX, 0);
+        ctx.lineTo(x - cameraX, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = startY; y < cameraY + canvas.height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y - cameraY);
+        ctx.lineTo(canvas.width, y - cameraY);
+        ctx.stroke();
+      }
+
+      // AI & ボス描画
+      aiList.forEach(ai => {
+        if (!ai.active) return;
+        const screenX = ai.x - cameraX;
+        const screenY = ai.y - cameraY;
+
+        if (screenX > -50 && screenX < canvas.width + 50 && screenY > -50 && screenY < canvas.height + 50) {
+          ctx.beginPath();
+          ctx.arc(screenX, screenY, ai.isBoss ? 35 : 18, 0, Math.PI * 2);
+          ctx.fillStyle = ai.isBoss ? ai.bossType.color : '#ef4444';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = ai.isBoss ? 'bold 14px sans-serif' : '12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(ai.isBoss ? ai.bossType.name : `AI Lv.${ai.level}`, screenX, screenY - (ai.isBoss ? 45 : 25));
+        }
+      });
+
+      // 他のプレイヤー描画
+      const now = Date.now();
+      let activeCount = 1; // 自分自身を含める
+
+      Object.values(remotePlayers).forEach(rp => {
+        if (!rp.online || now - rp.lastSeen > 15000) return;
+        activeCount++;
+
+        const screenX = rp.x - cameraX;
+        const screenY = rp.y - cameraY;
+
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2);
+        
+        if (rp.activeSkinId) {
+          const skinObj = SKIN_LIST.find(s => s.id === rp.activeSkinId);
+          ctx.fillStyle = skinObj ? skinObj.color : '#38bdf8';
+        } else {
+          ctx.fillStyle = '#38bdf8';
+        }
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        
+        let label = rp.username;
+        if (rp.hasBadge) label += ' ✓';
+        ctx.fillText(label, screenX, screenY - 28);
+
+        if (rp.equippedChar) {
+          ctx.fillStyle = '#facc15';
+          ctx.font = '10px sans-serif';
+          ctx.fillText(`[${rp.equippedChar.rarity}] ${getCharFullName(rp.equippedChar)}`, screenX, screenY - 40);
+        }
+      });
+
+      // 自分自身の描画
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, player.radius, 0, Math.PI * 2);
+      
+      if (userData.activeSkinId) {
+        const skinObj = SKIN_LIST.find(s => s.id === userData.activeSkinId);
+        ctx.fillStyle = skinObj ? skinObj.color : '#2563eb';
+      } else {
+        ctx.fillStyle = '#2563eb';
+      }
+      ctx.fill();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+
+      let myLabel = userData.username;
+      if (userData.hasBadge || badgedUsers[userData.username]) myLabel += ' ✓';
+      ctx.fillText(myLabel, canvas.width / 2, canvas.height / 2 - 28);
+
+      const equipped = userData.inventory.find(i => i.id === userData.equippedCharId);
+      if (equipped) {
+        ctx.fillStyle = '#facc15';
+        ctx.font = '11px sans-serif';
+        ctx.fillText(`[${equipped.rarity}] ${getCharFullName(equipped)}`, canvas.width / 2, canvas.height / 2 - 42);
+      }
+    }
+
+    function gameLoop() {
+      updateGame();
+      drawGame();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // 初期化実行
+    window.onload = () => {
+      resizeCanvas();
+      initOnline();
+      initAI();
+      updateUI();
+      gameLoop();
+    };
   </script>
 </body>
 </html>
